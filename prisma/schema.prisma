@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth.js (schéma attendu par @auth/prisma-adapter)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+  videos        Video[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Account {
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([provider, providerAccountId])
+}
+
+model Session {
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@id([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// Clipper
+// ---------------------------------------------------------------------------
+
+enum VideoStatus {
+  PENDING
+  FETCHING_TRANSCRIPT
+  ANALYZING
+  DOWNLOADING
+  RENDERING
+  DONE
+  FAILED
+}
+
+enum CaptionKind {
+  MANUAL
+  ASR
+}
+
+enum CropMode {
+  CENTER
+  BLUR
+}
+
+enum RenderStatus {
+  PENDING
+  QUEUED
+  RENDERING
+  DONE
+  FAILED
+}
+
+model Video {
+  id           String      @id @default(cuid())
+  youtubeId    String      @unique
+  userId       String
+  title        String
+  durationSec  Int
+  channelId    String
+  channelTitle String
+  thumbnailUrl String?
+  status       VideoStatus @default(PENDING)
+  error        String?
+  /// Options choisies à la soumission : { clipCount, minDuration, maxDuration, language, cropMode }
+  options      Json
+  /// Chemin du MP4 source téléchargé par yt-dlp (relatif à STORAGE_DIR)
+  sourcePath   String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcript Transcript?
+  clips      Clip[]
+
+  @@index([userId, createdAt])
+}
+
+model Transcript {
+  id             String      @id @default(cuid())
+  videoId        String      @unique
+  language       String
+  kind           CaptionKind
+  captionTrackId String
+  /// Segments parsés du VTT : [{ start, end, text }] en secondes
+  segments       Json
+  createdAt      DateTime    @default(now())
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+}
+
+model Clip {
+  id               String       @id @default(cuid())
+  videoId          String
+  start            Float
+  end              Float
+  title            String
+  hook             String
+  score            Int
+  reason           String
+  cropMode         CropMode     @default(BLUR)
+  /// Textes de sous-titres corrigés à la main : [{ start, end, text }] (null = transcription d'origine)
+  captionOverrides Json?
+  renderStatus     RenderStatus @default(PENDING)
+  /// Progression du rendu, 0-100
+  renderProgress   Int          @default(0)
+  renderError      String?
+  /// Chemins relatifs à STORAGE_DIR
+  mp4Path          String?
+  srtPath          String?
+  thumbPath        String?
+  renderedAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@index([videoId, score])
+}
