@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { userMessage } from "@/lib/errors";
-import type { ProcessVideoJob } from "@/lib/jobs/boss";
+import { isRetryable, userMessage } from "@/lib/errors";
+import { MAX_ATTEMPTS, retryDelayUpperBound, type ProcessVideoJob } from "@/lib/jobs/boss";
 import { videoOptionsSchema } from "@/lib/options";
 import { getYouTubeClient } from "@/lib/youtube/client";
 import { fetchTranscript } from "@/lib/youtube/captions";
@@ -16,8 +16,12 @@ async function setStatus(videoId: string, status: VideoStatus) {
   if (count === 0) throw new VideoDeletedError();
 }
 
-/** Pipeline d'une vidéo, exécuté par le worker. Chaque étape déjà faite est sautée. */
-export async function processVideo({ videoId, userId }: ProcessVideoJob): Promise<void> {
+/**
+ * Pipeline d'une vidéo, exécuté par le worker. Chaque étape déjà faite est sautée.
+ * Sur une erreur passagère, relance l'erreur pour que pg-boss replanifie le job
+ * (`retryCount` = nombre de tentatives déjà faites) ; sinon, passe la vidéo en FAILED.
+ */
+export async function processVideo({ videoId, userId }: ProcessVideoJob, retryCount = 0): Promise<void> {
   const video = await prisma.video.findUnique({
     where: { id: videoId },
     include: { transcript: true, _count: { select: { clips: true } } },
@@ -68,10 +72,31 @@ export async function processVideo({ videoId, userId }: ProcessVideoJob): Promis
       console.log(`[process-video] ${video.youtubeId} : vidéo supprimée, traitement interrompu`);
       return;
     }
-    console.error(`[process-video] ${video.youtubeId} en échec :`, error);
+    const attempt = retryCount + 1;
+    const message = userMessage(error);
+
+    if (isRetryable(error) && attempt < MAX_ATTEMPTS) {
+      const minutes = Math.ceil(retryDelayUpperBound(retryCount) / 60);
+      console.warn(
+        `[process-video] ${video.youtubeId} : tentative ${attempt}/${MAX_ATTEMPTS} échouée, nouvel essai d'ici ${minutes} min : ${message}`,
+      );
+      await prisma.video.updateMany({
+        where: { id: videoId },
+        data: {
+          status: "PENDING",
+          error: `${message} Nouvelle tentative automatique (${attempt + 1}/${MAX_ATTEMPTS}) d'ici ${minutes} min.`,
+        },
+      });
+      throw error; // pg-boss replanifie le job
+    }
+
+    console.error(`[process-video] ${video.youtubeId} en échec (tentative ${attempt}) :`, error);
     await prisma.video.updateMany({
       where: { id: videoId },
-      data: { status: "FAILED", error: userMessage(error) },
+      data: {
+        status: "FAILED",
+        error: attempt > 1 ? `${message} (échec après ${attempt} tentatives)` : message,
+      },
     });
   } finally {
     deletion.stop();

@@ -17,7 +17,8 @@ async function main() {
   const boss = await getBoss("worker");
 
   await boss.work<ProcessVideoJob>(QUEUES.processVideo, { localConcurrency: 1 }, async ([job]) => {
-    await processVideo(job.data);
+    // Une exception ici = erreur passagère : pg-boss replanifie le job (voir RETRY_POLICY).
+    await processVideo(job.data, job.retryCount);
   });
 
   console.log("Worker prêt, en attente de jobs…");

@@ -1,4 +1,4 @@
-import { AppError } from "@/lib/errors";
+import { AppError, isNetworkError } from "@/lib/errors";
 
 type GoogleErrorShape = {
   message?: string;
@@ -13,7 +13,10 @@ type GoogleErrorShape = {
   };
 };
 
-const QUOTA_REASONS = new Set(["quotaExceeded", "dailyLimitExceeded", "rateLimitExceeded", "userRateLimitExceeded"]);
+/** Quota journalier : remis à zéro à minuit (heure du Pacifique), inutile de réessayer avant. */
+const DAILY_QUOTA_REASONS = new Set(["quotaExceeded", "dailyLimitExceeded"]);
+/** Limites de débit : passagères. */
+const RATE_LIMIT_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded"]);
 
 /** Convertit une erreur googleapis / google-auth-library en AppError lisible. */
 export function toYouTubeError(error: unknown, context: string): AppError {
@@ -26,12 +29,15 @@ export function toYouTubeError(error: unknown, context: string): AppError {
   const reason = apiError?.errors?.[0]?.reason;
   const detail = apiError?.message ?? data?.error_description ?? e.message ?? "erreur inconnue";
 
-  if (reason && QUOTA_REASONS.has(reason)) {
+  if (reason && DAILY_QUOTA_REASONS.has(reason)) {
     return new AppError(
       "QUOTA_EXCEEDED",
       "Quota de l'API YouTube dépassé pour aujourd'hui. Réessaie après sa remise à zéro (minuit, heure du Pacifique).",
       { cause: error },
     );
+  }
+  if (reason && RATE_LIMIT_REASONS.has(reason)) {
+    return new AppError("YOUTUBE_ERROR", "Trop de requêtes vers l'API YouTube.", { cause: error, retryable: true });
   }
   if (data?.error === "invalid_grant" || status === 401) {
     return new AppError(
@@ -47,5 +53,9 @@ export function toYouTubeError(error: unknown, context: string): AppError {
       { cause: error },
     );
   }
-  return new AppError("YOUTUBE_ERROR", `Erreur de l'API YouTube (${context}) : ${detail}`, { cause: error });
+  return new AppError("YOUTUBE_ERROR", `Erreur de l'API YouTube (${context}) : ${detail}`, {
+    cause: error,
+    // Erreurs serveur (5xx, backendError) et coupures réseau : passagères.
+    retryable: (status !== undefined && status >= 500) || reason === "backendError" || isNetworkError(error),
+  });
 }

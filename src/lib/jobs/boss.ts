@@ -7,9 +7,23 @@ export const QUEUES = {
 export type ProcessVideoJob = { videoId: string; userId: string };
 
 const QUEUE_OPTIONS = {
-  // Les erreurs sont gérées par le pipeline (statut FAILED + message) : pas de retry automatique.
-  [QUEUES.processVideo]: { retryLimit: 0, expireInSeconds: 30 * 60 },
+  [QUEUES.processVideo]: { expireInSeconds: 30 * 60 },
 };
+
+/**
+ * Nouvelles tentatives automatiques des erreurs passagères (Gemini surchargé, réseau…).
+ * Délai exponentiel avec aléa calculé par pg-boss : 30–60 s, 1–2 min, 2–4 min, 4–8 min.
+ * Passé à l'envoi de chaque job : une file existante ne reprend pas ses options.
+ * Le pipeline relance l'erreur pour déclencher le retry, ou passe la vidéo en FAILED
+ * si l'erreur est définitive.
+ */
+export const RETRY_POLICY = { retryLimit: 4, retryDelay: 30, retryBackoff: true, retryDelayMax: 600 } as const;
+export const MAX_ATTEMPTS = RETRY_POLICY.retryLimit + 1;
+
+/** Délai maximal (s) avant la tentative suivante, pour l'afficher (même formule que pg-boss). */
+export function retryDelayUpperBound(retryCount: number): number {
+  return Math.min(RETRY_POLICY.retryDelayMax, RETRY_POLICY.retryDelay * 2 ** (retryCount + 1));
+}
 
 type Role = "web" | "worker";
 
@@ -42,7 +56,7 @@ export function getBoss(role: Role = "web"): Promise<PgBoss> {
 export async function enqueueProcessVideo(job: ProcessVideoJob): Promise<void> {
   const boss = await getBoss();
   // singletonKey : un seul traitement en file par vidéo.
-  await boss.send(QUEUES.processVideo, job, { singletonKey: job.videoId });
+  await boss.send(QUEUES.processVideo, job, { singletonKey: job.videoId, ...RETRY_POLICY });
 }
 
 /**

@@ -1,7 +1,7 @@
 import { ApiError, GoogleGenAI, type Content, type GenerateContentResponse } from "@google/genai";
 import { z } from "zod";
 import { geminiConfig } from "@/lib/env";
-import { AppError } from "@/lib/errors";
+import { AppError, isNetworkError } from "@/lib/errors";
 import { llmResponseJsonSchema, llmResponseSchema, type LlmResponse } from "./schema";
 
 let client: GoogleGenAI | undefined;
@@ -13,7 +13,7 @@ function getClient(): { ai: GoogleGenAI; model: string } {
   return { ai: client, model };
 }
 
-function toLlmError(error: unknown, model: string): AppError {
+export function toLlmError(error: unknown, model: string): AppError {
   if (error instanceof AppError) return error;
   if (error instanceof ApiError) {
     if (error.status === 404) {
@@ -26,18 +26,17 @@ function toLlmError(error: unknown, model: string): AppError {
       return new AppError("LLM_CONFIG", `Accès à Gemini refusé (${error.status}) : vérifie GEMINI_API_KEY.`, { cause: error });
     }
     if (error.status === 429) {
-      return new AppError("LLM_QUOTA", "Quota Gemini dépassé : réessaie plus tard.", { cause: error });
+      return new AppError("LLM_QUOTA", "Quota Gemini dépassé.", { cause: error, retryable: true });
     }
     if (error.status === 503) {
-      return new AppError(
-        "LLM_ERROR",
-        `Le modèle Gemini « ${model} » est surchargé en ce moment : réessaie dans quelques minutes.`,
-        { cause: error },
-      );
+      return new AppError("LLM_ERROR", `Le modèle Gemini « ${model} » est surchargé.`, { cause: error, retryable: true });
     }
   }
   const detail = error instanceof Error ? error.message : String(error);
-  return new AppError("LLM_ERROR", `Erreur de l'API Gemini : ${detail.slice(0, 300)}`, { cause: error });
+  return new AppError("LLM_ERROR", `Erreur de l'API Gemini : ${detail.slice(0, 300)}`, {
+    cause: error,
+    retryable: (error instanceof ApiError && error.status >= 500) || isNetworkError(error),
+  });
 }
 
 function validate(text: string | undefined): { data?: LlmResponse; problem?: string } {
@@ -101,5 +100,9 @@ export async function generateClipSelection(
     );
   }
 
-  throw new AppError("LLM_INVALID", `Gemini a renvoyé une réponse invalide deux fois de suite (${lastProblem.slice(0, 300)}).`);
+  throw new AppError(
+    "LLM_INVALID",
+    `Gemini a renvoyé une réponse invalide deux fois de suite (${lastProblem.slice(0, 300)}).`,
+    { retryable: true },
+  );
 }

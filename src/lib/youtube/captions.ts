@@ -52,8 +52,11 @@ export async function fetchTranscript(
       failures.push(`${track.language}/${track.kind} : piste vide`);
     } catch (error) {
       const appError = toYouTubeError(error, "téléchargement des sous-titres");
-      // Inutile d'essayer d'autres pistes si le quota ou l'authentification bloquent.
-      if (appError.code === "QUOTA_EXCEEDED" || appError.code === "AUTH_EXPIRED") throw appError;
+      // Inutile d'essayer d'autres pistes si le quota ou l'authentification bloquent ;
+      // une erreur passagère sera réessayée plus tard par le worker.
+      if (appError.code === "QUOTA_EXCEEDED" || appError.code === "AUTH_EXPIRED" || appError.retryable) {
+        throw appError;
+      }
       console.warn(`[captions] piste ${track.id} (${track.language}/${track.kind}) ignorée :`, appError.message);
       failures.push(`${track.language}/${track.kind} : ${appError.message}`);
     }

@@ -58,6 +58,10 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
         </div>
       </header>
 
+      {!isFinalStatus(video.status) && video.error && (
+        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">{video.error}</p>
+      )}
+
       {video.status === "FAILED" && (
         <div className="space-y-3 rounded-lg border border-accent/40 bg-accent/10 p-4 text-sm">
           <p>{video.error ?? "Le traitement a échoué."}</p>
