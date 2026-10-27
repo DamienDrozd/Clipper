@@ -24,14 +24,26 @@ Format :
 Classe les clips du meilleur au moins bon. Réponds uniquement avec le JSON demandé.`;
 }
 
+/** Nombre de clips : imposé (on demande quelques candidats de plus) ou choisi par le modèle. */
+export type ClipCountRequest = { mode: "fixed"; candidates: number } | { mode: "auto"; max: number };
+
+function countInstruction(count: ClipCountRequest): string {
+  if (count.mode === "fixed") return `Propose jusqu'à ${count.candidates} clips.`;
+  return [
+    "Choisis toi-même le nombre de clips : ne retiens que les passages qui feraient vraiment de bons shorts, sans remplissage pour atteindre un quota.",
+    "Mieux vaut 2 excellents clips que 8 moyens ; mais si la vidéo regorge de bons moments, n'hésite pas à en proposer davantage.",
+    `Au moins 1 clip, ${count.max} au maximum.`,
+  ].join("\n");
+}
+
 export function userPrompt(params: {
   title: string;
   durationSec: number;
-  candidates: number;
+  count: ClipCountRequest;
   transcript: string;
   part?: { index: number; total: number; from: number; to: number };
 }): string {
-  const { title, durationSec, candidates, transcript, part } = params;
+  const { title, durationSec, count, transcript, part } = params;
   const lines = [
     `Titre de la vidéo : ${title}`,
     `Durée totale : ${formatClock(durationSec)}`,
@@ -41,6 +53,6 @@ export function userPrompt(params: {
       `Cet extrait est la partie ${part.index}/${part.total} de la transcription (de ${formatClock(part.from)} à ${formatClock(part.to)}). Ne propose que des passages de cet extrait.`,
     );
   }
-  lines.push(`Propose jusqu'à ${candidates} clips.`, "", "Transcription :", transcript);
+  lines.push(countInstruction(count), "", "Transcription :", transcript);
   return lines.join("\n");
 }

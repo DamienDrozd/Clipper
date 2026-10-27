@@ -3,15 +3,30 @@ import { z } from "zod";
 export const CROP_MODES = ["blur", "center"] as const;
 export type CropModeOption = (typeof CROP_MODES)[number];
 
+export const MAX_CLIPS = 20;
+
+/** Plafond du mode automatique : environ 1 clip par tranche de 3 min, entre 3 et 20. */
+export function autoMaxClips(durationSec: number): number {
+  return Math.min(MAX_CLIPS, Math.max(3, Math.round(durationSec / 180)));
+}
+
 /** Options choisies à la soumission d'une vidéo (stockées dans Video.options). */
 export const videoOptionsSchema = z
   .object({
-    clipCount: z.coerce
-      .number({ error: "Nombre de clips invalide" })
-      .int()
-      .min(1, "Au moins 1 clip")
-      .max(20, "20 clips maximum")
-      .default(5),
+    /** null = automatique : Gemini choisit le nombre de clips (voir autoMaxClips). */
+    clipCount: z
+      .preprocess(
+        (value) => (value === "" || value === undefined ? null : value),
+        z.union([
+          z.null(),
+          z.coerce
+            .number({ error: "Nombre de clips invalide" })
+            .int("Nombre de clips invalide")
+            .min(1, "Au moins 1 clip")
+            .max(MAX_CLIPS, `${MAX_CLIPS} clips maximum`),
+        ]),
+      )
+      .default(null),
     minDuration: z.coerce
       .number({ error: "Durée min invalide" })
       .int()

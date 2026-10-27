@@ -2,9 +2,9 @@ import { AppError } from "@/lib/errors";
 import { postProcessClips, type CandidateClip, type SelectedClip } from "@/lib/clips/postprocess";
 import { chunkSegments, formatTranscript } from "@/lib/transcript/format";
 import type { Segment } from "@/lib/transcript/types";
-import type { VideoOptions } from "@/lib/options";
+import { autoMaxClips, type VideoOptions } from "@/lib/options";
 import { generateClipSelection } from "./gemini";
-import { systemInstruction, userPrompt } from "./prompt";
+import { systemInstruction, userPrompt, type ClipCountRequest } from "./prompt";
 
 /** Au-delà (≈ 1 h de parole), la transcription est envoyée en plusieurs blocs. */
 const MAX_CHARS_PER_CALL = 60_000;
@@ -26,6 +26,13 @@ export async function selectClips(params: {
   const system = systemInstruction(options);
   const candidates: CandidateClip[] = [];
 
+  // Nombre imposé, ou choisi par Gemini sous un plafond proportionnel à la durée.
+  const maxClips = options.clipCount ?? autoMaxClips(durationSec);
+  const count: ClipCountRequest =
+    options.clipCount === null
+      ? { mode: "auto", max: maxClips }
+      : { mode: "fixed", candidates: options.clipCount + EXTRA_CANDIDATES };
+
   // Séquentiel : évite de saturer le quota Gemini sur les longues vidéos.
   for (const [i, chunk] of chunks.entries()) {
     signal?.throwIfAborted();
@@ -34,7 +41,7 @@ export async function selectClips(params: {
       userPrompt({
         title,
         durationSec,
-        candidates: options.clipCount + EXTRA_CANDIDATES,
+        count,
         transcript: formatTranscript(chunk, withHours),
         part:
           chunks.length > 1
@@ -46,7 +53,7 @@ export async function selectClips(params: {
     candidates.push(...response.clips);
   }
 
-  const clips = postProcessClips(candidates, segments, options);
+  const clips = postProcessClips(candidates, segments, { ...options, clipCount: maxClips });
   if (clips.length === 0) {
     throw new AppError(
       "NO_CLIPS",

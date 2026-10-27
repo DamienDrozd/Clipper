@@ -30,7 +30,17 @@ export function VideoForm() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Field label="Nombre de clips" htmlFor="clipCount">
-          <input id="clipCount" name="clipCount" type="number" min={1} max={20} defaultValue={v.clipCount ?? 5} className={inputClass} />
+          <input
+            id="clipCount"
+            name="clipCount"
+            type="number"
+            min={1}
+            max={20}
+            placeholder="Auto"
+            title="Laisser vide pour que l'IA choisisse le nombre de clips"
+            defaultValue={v.clipCount ?? ""}
+            className={inputClass}
+          />
         </Field>
         <Field label="Durée min (s)" htmlFor="minDuration">
           <input id="minDuration" name="minDuration" type="number" min={5} max={170} defaultValue={v.minDuration ?? 20} className={inputClass} />
