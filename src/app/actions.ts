@@ -37,12 +37,17 @@ export async function submitVideo(_prev: SubmitVideoState, formData: FormData): 
 
   let videoId: string;
   try {
-    const existing = await prisma.video.findUnique({ where: { youtubeId } });
+    const existing = await prisma.video.findUnique({
+      where: { youtubeId },
+      include: { _count: { select: { clips: true } } },
+    });
     if (existing && existing.userId !== user.id) {
       return { error: "Cette vidéo est déjà traitée par un autre compte.", values };
     }
 
-    if (existing && existing.status !== "FAILED") {
+    const needsProcessing =
+      existing?.status === "FAILED" || (existing?.status === "DONE" && existing._count.clips === 0);
+    if (existing && !needsProcessing) {
       // Déjà traitée ou en cours : on affiche simplement sa page.
       videoId = existing.id;
     } else {
