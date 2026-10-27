@@ -5,7 +5,12 @@ export const QUEUES = {
   renderClip: "render-clip",
 } as const;
 
-export type ProcessVideoJob = { videoId: string; userId: string };
+export type ProcessVideoJob = {
+  videoId: string;
+  userId: string;
+  /** Ignorer le cache des réponses Gemini (« Régénérer la sélection »). */
+  bypassCache?: boolean;
+};
 /** Nouveau rendu d'un seul clip (après recadrage, etc.). */
 export type RenderClipJob = { clipId: string; videoId: string };
 
@@ -18,18 +23,23 @@ const QUEUE_OPTIONS = {
 };
 
 /**
- * Nouvelles tentatives automatiques des erreurs passagères (Gemini surchargé, réseau…).
- * Délai exponentiel avec aléa calculé par pg-boss : 30–60 s, 1–2 min, 2–4 min, 4–8 min.
- * Passé à l'envoi de chaque job : une file existante ne reprend pas ses options.
- * Le pipeline relance l'erreur pour déclencher le retry, ou passe la vidéo en FAILED
- * si l'erreur est définitive.
+ * Reprises longues du pipeline d'une vidéo, quand une étape échoue sur une erreur temporaire
+ * malgré les retries courts (toute la chaîne Gemini surchargée, réseau…) : la vidéo passe en
+ * WAITING_RETRY et pg-boss replanifie le job. Délai exponentiel avec aléa calculé par pg-boss :
+ * ~5–10 min, 10–20 min, 20–40 min, puis 40–60 min. Le pipeline relance l'erreur pour
+ * déclencher la reprise, ou passe la vidéo en FAILED si l'erreur est définitive.
+ * Options passées à l'envoi de chaque job : une file existante ne reprend pas ses options.
  */
-export const RETRY_POLICY = { retryLimit: 4, retryDelay: 30, retryBackoff: true, retryDelayMax: 600 } as const;
-export const MAX_ATTEMPTS = RETRY_POLICY.retryLimit + 1;
+export const PROCESS_RETRY_POLICY = { retryLimit: 4, retryDelay: 300, retryBackoff: true, retryDelayMax: 3600 } as const;
+export const MAX_PROCESS_ATTEMPTS = PROCESS_RETRY_POLICY.retryLimit + 1;
 
-/** Délai maximal (s) avant la tentative suivante, pour l'afficher (même formule que pg-boss). */
-export function retryDelayUpperBound(retryCount: number): number {
-  return Math.min(RETRY_POLICY.retryDelayMax, RETRY_POLICY.retryDelay * 2 ** (retryCount + 1));
+/** Reprises du rendu d'un seul clip (téléchargement de la source) : plus rapprochées. */
+export const RENDER_RETRY_POLICY = { retryLimit: 4, retryDelay: 30, retryBackoff: true, retryDelayMax: 600 } as const;
+export const MAX_RENDER_ATTEMPTS = RENDER_RETRY_POLICY.retryLimit + 1;
+
+/** Délai maximal (s) avant la reprise suivante d'un rendu, pour l'afficher (formule de pg-boss). */
+export function renderRetryDelayUpperBound(retryCount: number): number {
+  return Math.min(RENDER_RETRY_POLICY.retryDelayMax, RENDER_RETRY_POLICY.retryDelay * 2 ** (retryCount + 1));
 }
 
 type Role = "web" | "worker";
@@ -62,12 +72,21 @@ export function getBoss(role: Role = "web"): Promise<PgBoss> {
 
 export async function enqueueProcessVideo(job: ProcessVideoJob): Promise<void> {
   const boss = await getBoss();
-  // singletonKey : un seul traitement en file par vidéo.
+  // singletonKey = videoId : clé de recherche (findJobs, annulation). Dans une file « standard »,
+  // elle n'empêche pas les doublons : l'interface évite d'en créer.
   await boss.send(QUEUES.processVideo, job, {
     singletonKey: job.videoId,
     expireInSeconds: JOB_TIMEOUT_SECONDS,
-    ...RETRY_POLICY,
+    ...PROCESS_RETRY_POLICY,
   });
+}
+
+/** Heure de la prochaine reprise planifiée par pg-boss pour une vidéo en WAITING_RETRY. */
+export async function getNextRetryAt(videoId: string): Promise<Date | null> {
+  const boss = await getBoss();
+  const jobs = await boss.findJobs(QUEUES.processVideo, { key: videoId, queued: true });
+  const times = jobs.filter((job) => job.state === "retry").map((job) => new Date(job.startAfter).getTime());
+  return times.length > 0 ? new Date(Math.min(...times)) : null;
 }
 
 /**
@@ -77,7 +96,7 @@ export async function enqueueProcessVideo(job: ProcessVideoJob): Promise<void> {
  */
 export async function enqueueRenderClip(job: RenderClipJob): Promise<void> {
   const boss = await getBoss();
-  await boss.send(QUEUES.renderClip, job, { expireInSeconds: JOB_TIMEOUT_SECONDS, ...RETRY_POLICY });
+  await boss.send(QUEUES.renderClip, job, { expireInSeconds: JOB_TIMEOUT_SECONDS, ...RENDER_RETRY_POLICY });
 }
 
 /**

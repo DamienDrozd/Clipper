@@ -1,5 +1,11 @@
 import { formatClock } from "@/lib/transcript/format";
 
+/**
+ * Version du prompt de sélection, incluse dans la clé du cache des réponses Gemini :
+ * à incrémenter à chaque modification des consignes ou du schéma de sortie.
+ */
+export const SELECTION_PROMPT_VERSION = "selection-2";
+
 export function systemInstruction({ minDuration, maxDuration }: { minDuration: number; maxDuration: number }): string {
   return `Tu es monteur vidéo, spécialiste des formats courts verticaux (YouTube Shorts, TikTok, Reels).
 On te donne la transcription horodatée d'une vidéo YouTube longue. Chaque ligne a la forme « [mm:ss] texte » : l'horodatage indique le début de la ligne.

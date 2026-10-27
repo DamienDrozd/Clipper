@@ -71,6 +71,8 @@ enum VideoStatus {
   ANALYZING
   DOWNLOADING
   RENDERING
+  /// Échec temporaire (Gemini surchargé, réseau…) : pg-boss replanifie le job
+  WAITING_RETRY
   DONE
   FAILED
 }
@@ -110,6 +112,8 @@ model Video {
   options      Json
   /// Chemin du MP4 source téléchargé par yt-dlp (relatif à STORAGE_DIR)
   sourcePath   String?
+  /// Modèle Gemini qui a réellement produit la sélection (secours éventuel)
+  analysisModel String?
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
 
@@ -162,4 +166,38 @@ model Clip {
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
   @@index([videoId, score])
+}
+
+// ---------------------------------------------------------------------------
+// Gemini : cache et journal des appels (sans lien vers Video : conservés après suppression)
+// ---------------------------------------------------------------------------
+
+/// Réponses Gemini validées. Clé : SHA-256 de l'usage, de la version du prompt, des consignes,
+/// du prompt (transcription + options) et du schéma de sortie.
+model LlmCache {
+  hash      String   @id
+  purpose   String
+  model     String
+  data      Json
+  createdAt DateTime @default(now())
+}
+
+/// Une ligne par tentative d'appel à Gemini, pour suivre les erreurs par modèle et par heure.
+model LlmCallLog {
+  id           String   @id @default(cuid())
+  videoId      String?
+  purpose      String
+  model        String
+  attempt      Int
+  /// SUCCESS, ERROR ou SKIPPED (modèle écarté par le coupe-circuit)
+  outcome      String
+  errorKind    String?
+  httpStatus   Int?
+  durationMs   Int
+  promptTokens Int?
+  outputTokens Int?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([model, createdAt])
 }

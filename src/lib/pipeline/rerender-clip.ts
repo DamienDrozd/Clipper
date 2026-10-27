@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isRetryable, userMessage } from "@/lib/errors";
-import { MAX_ATTEMPTS, retryDelayUpperBound, type RenderClipJob } from "@/lib/jobs/boss";
+import { MAX_RENDER_ATTEMPTS, renderRetryDelayUpperBound, type RenderClipJob } from "@/lib/jobs/boss";
 import { ensureSource } from "@/lib/media/ytdlp";
 import { toStoragePath } from "@/lib/storage";
 import { VideoDeletedError, videoExists, watchDeletion } from "./cancellation";
@@ -27,14 +27,14 @@ export async function rerenderClip({ clipId, videoId }: RenderClipJob, retryCoun
 
     const attempt = retryCount + 1;
     const message = userMessage(error);
-    const retry = isRetryable(error) && attempt < MAX_ATTEMPTS;
+    const retry = isRetryable(error) && attempt < MAX_RENDER_ATTEMPTS;
     console.error(`[render-clip] ${clipId} : tentative ${attempt} en échec${retry ? ", nouvel essai prévu" : ""} :`, error);
     await prisma.clip.updateMany({
       where: { id: clipId },
       data: retry
         ? {
             renderStatus: "QUEUED",
-            renderError: `${message} Nouvelle tentative automatique d'ici ${Math.ceil(retryDelayUpperBound(retryCount) / 60)} min.`,
+            renderError: `${message} Nouvelle tentative automatique d'ici ${Math.ceil(renderRetryDelayUpperBound(retryCount) / 60)} min.`,
           }
         : { renderStatus: "FAILED", renderError: message },
     });

@@ -3,8 +3,9 @@ import { postProcessClips, type CandidateClip, type SelectedClip } from "@/lib/c
 import { chunkSegments, formatTranscript } from "@/lib/transcript/format";
 import type { Segment } from "@/lib/transcript/types";
 import { autoMaxClips, type VideoOptions } from "@/lib/options";
-import { generateClipSelection } from "./gemini";
-import { systemInstruction, userPrompt, type ClipCountRequest } from "./prompt";
+import { generateStructured } from "./gemini-client";
+import { SELECTION_PROMPT_VERSION, systemInstruction, userPrompt, type ClipCountRequest } from "./prompt";
+import { llmResponseJsonSchema, llmResponseSchema } from "./schema";
 
 /** Au-delà (≈ 1 h de parole), la transcription est envoyée en plusieurs blocs. */
 const MAX_CHARS_PER_CALL = 60_000;
@@ -18,13 +19,17 @@ export async function selectClips(params: {
   segments: Segment[];
   options: VideoOptions;
   signal?: AbortSignal;
-}): Promise<SelectedClip[]> {
+  videoId?: string;
+  /** Ignorer le cache des réponses Gemini (« Régénérer la sélection »). */
+  bypassCache?: boolean;
+}): Promise<{ clips: SelectedClip[]; model: string }> {
   const { title, durationSec, segments, options, signal } = params;
   const withHours = durationSec >= 3600;
   const overlapSeconds = Math.max(120, options.maxDuration + 30);
   const chunks = chunkSegments(segments, MAX_CHARS_PER_CALL, overlapSeconds);
   const system = systemInstruction(options);
   const candidates: CandidateClip[] = [];
+  const models = new Set<string>();
 
   // Nombre imposé, ou choisi par Gemini sous un plafond proportionnel à la durée.
   const maxClips = options.clipCount ?? autoMaxClips(durationSec);
@@ -36,9 +41,11 @@ export async function selectClips(params: {
   // Séquentiel : évite de saturer le quota Gemini sur les longues vidéos.
   for (const [i, chunk] of chunks.entries()) {
     signal?.throwIfAborted();
-    const response = await generateClipSelection(
+    const { data, model } = await generateStructured({
+      purpose: "selection",
+      promptVersion: SELECTION_PROMPT_VERSION,
       system,
-      userPrompt({
+      prompt: userPrompt({
         title,
         durationSec,
         count,
@@ -48,9 +55,14 @@ export async function selectClips(params: {
             ? { index: i + 1, total: chunks.length, from: chunk[0].start, to: chunk.at(-1)!.end }
             : undefined,
       }),
+      schema: llmResponseSchema,
+      jsonSchema: llmResponseJsonSchema,
       signal,
-    );
-    candidates.push(...response.clips);
+      videoId: params.videoId,
+      bypassCache: params.bypassCache,
+    });
+    candidates.push(...data.clips);
+    models.add(model);
   }
 
   const clips = postProcessClips(candidates, segments, { ...options, clipCount: maxClips });
@@ -60,5 +72,5 @@ export async function selectClips(params: {
       "L'IA n'a proposé aucun passage exploitable avec ces contraintes (essaie d'élargir les durées min/max).",
     );
   }
-  return clips;
+  return { clips, model: [...models].join(", ") };
 }

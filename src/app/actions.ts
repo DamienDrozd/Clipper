@@ -108,6 +108,8 @@ export async function retryVideo(videoId: string): Promise<void> {
   });
   if (!video || !canResume(video.status, video.clips.length, unrendered(video.clips))) return;
 
+  // « Relancer maintenant » : la reprise planifiée par pg-boss est remplacée par un job immédiat.
+  if (video.status === "WAITING_RETRY") await cancelVideoJobs(video.id);
   await prisma.video.update({ where: { id: video.id }, data: { status: "PENDING", error: null } });
   await enqueueProcessVideo({ videoId: video.id, userId: user.id });
   redirect(`/videos/${video.id}`);
@@ -268,7 +270,8 @@ export async function regenerateSelection(videoId: string): Promise<{ error?: st
       prisma.video.update({ where: { id: video.id }, data: { status: "PENDING", error: null, progress: 0 } }),
     ]);
     await removeStorageFiles(video.clips.flatMap((c) => [c.mp4Path, c.srtPath, c.thumbPath]));
-    await enqueueProcessVideo({ videoId: video.id, userId: user.id });
+    // Nouvel appel à Gemini, sans réutiliser la réponse en cache.
+    await enqueueProcessVideo({ videoId: video.id, userId: user.id, bypassCache: true });
   } catch (error) {
     console.error("[regenerateSelection]", error);
     return { error: userMessage(error) };

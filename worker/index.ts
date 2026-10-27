@@ -10,15 +10,15 @@ import { rerenderClip } from "@/lib/pipeline/rerender-clip";
 
 async function main() {
   env(); // échoue tôt si une variable manque
-  const { model } = geminiConfig();
-  console.log(`✓ Gemini : ${model}`);
+  const gemini = geminiConfig();
+  console.log(`✓ Gemini : ${gemini.models.join(" → ")} (retries ${gemini.maxRetries}, timeout ${gemini.timeoutMs / 1000} s)`);
   const versions = await checkBinaries();
   for (const [name, version] of Object.entries(versions)) console.log(`✓ ${name} : ${version}`);
 
   const boss = await getBoss("worker");
 
   await boss.work<ProcessVideoJob>(QUEUES.processVideo, { localConcurrency: 1 }, async ([job]) => {
-    // Une exception ici = erreur passagère : pg-boss replanifie le job (voir RETRY_POLICY).
+    // Une exception ici = erreur temporaire : pg-boss replanifie le job (voir PROCESS_RETRY_POLICY).
     await processVideo(job.data, job.retryCount);
   });
   // Un rendu à la fois : deux modifications successives d'un même clip sont rendues dans l'ordre.

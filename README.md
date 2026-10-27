@@ -42,7 +42,8 @@ Navigateur ──► Next.js (web)  ── server actions, pages, /api/files (Ra
   long dans une requête HTTP.
 - **Worker** (`npm run worker`, process séparé) : files pg-boss `process-video` (transcription →
   analyse → téléchargement → rendu) et `render-clip` (nouveau rendu d'un clip).
-- Statuts d'une vidéo : `PENDING → FETCHING_TRANSCRIPT → ANALYZING → DOWNLOADING → RENDERING → DONE | FAILED`.
+- Statuts d'une vidéo : `PENDING → FETCHING_TRANSCRIPT → ANALYZING → DOWNLOADING → RENDERING → DONE | FAILED`,
+  avec `WAITING_RETRY` en cas d'échec temporaire (reprise automatique planifiée).
 
 Stack : Next.js 16 (App Router, Cache Components) · Prisma 7 (adapter `pg`) · Auth.js v5 (Google) ·
 PostgreSQL · pg-boss · Gemini (`@google/genai`) · googleapis · ffmpeg · yt-dlp · zod · vitest.
@@ -100,8 +101,34 @@ transcription est mise en cache et n'est jamais retéléchargée.
 ## Clé Gemini
 
 Crée une clé sur [Google AI Studio](https://aistudio.google.com/apikey) et renseigne `GEMINI_API_KEY`.
-Le modèle est choisi par `GEMINI_MODEL` (par exemple `gemini-3.6-flash`). En cas de surcharge
-(erreur 503) ou de quota (429), le worker réessaie automatiquement pendant environ 15 minutes.
+Les modèles sont listés dans `GEMINI_MODELS`, dans l'ordre d'essai (le premier est le principal,
+les suivants servent de secours). Tous les appels passent par `src/lib/llm/gemini-client.ts` :
+
+- **retries courts** par modèle sur les erreurs temporaires (503/500, timeout, réseau), avec backoff
+  exponentiel et jitter ; sur un 429, attente du délai conseillé par l'API ;
+- **bascule** sur le modèle suivant si le modèle reste surchargé ou limité (même prompt, même schéma,
+  même validation) ;
+- **coupe-circuit** : un modèle qui enchaîne les 503 est écarté quelques minutes ;
+- **arrêt immédiat** sur un quota journalier ou un plafond de dépenses atteint, une clé ou un modèle
+  invalide, ou un contenu refusé ;
+- **reprise longue** : si toute la chaîne échoue sur des erreurs temporaires, la vidéo passe
+  « En attente de nouvelle tentative » et pg-boss relance le traitement environ 5, 10, 20 puis
+  40 minutes plus tard (heure affichée dans l'interface, bouton « Relancer maintenant ») ;
+- **cache** : une réponse validée est réutilisée pour une requête identique (même transcription,
+  options et version du prompt) ; « Régénérer la sélection » force un nouvel appel ;
+- **journal** : chaque tentative est enregistrée dans la table `LlmCallLog` (modèle, type d'erreur,
+  code HTTP, durée, tokens) et dans les logs du worker. Exemple pour suivre les 503 :
+
+```sql
+SELECT date_trunc('hour', "createdAt") AS heure, model,
+       count(*) FILTER (WHERE "errorKind" = 'OVERLOADED') AS surcharges,
+       count(*) AS appels
+FROM "LlmCallLog"
+GROUP BY 1, 2
+ORDER BY 1 DESC, 2;
+```
+
+Les réglages (retries, délais, timeout, coupe-circuit) sont documentés dans [.env.example](.env.example).
 
 ## Variables d'environnement
 
@@ -113,7 +140,8 @@ Voir [.env.example](.env.example).
 | `AUTH_SECRET` | secret Auth.js (`npx auth secret` ou `openssl rand -base64 33`) |
 | `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` | client OAuth Google |
 | `ALLOWED_EMAILS` | emails autorisés à se connecter, séparés par des virgules |
-| `GEMINI_API_KEY` / `GEMINI_MODEL` | clé et modèle Gemini (obligatoires pour le worker) |
+| `GEMINI_API_KEY` / `GEMINI_MODELS` | clé et chaîne de modèles Gemini (obligatoires pour le worker) |
+| `GEMINI_MAX_RETRIES`, `GEMINI_BACKOFF_*`, `GEMINI_TIMEOUT_MS`, `GEMINI_BREAKER_*` | *optionnel* : réglages de la couche d'appel Gemini |
 | `STORAGE_DIR` | dossier des fichiers (sources, rendus), partagé par le web et le worker |
 | `FFMPEG_PATH`, `FFPROBE_PATH`, `YTDLP_PATH` | *optionnel* : chemins des binaires (défaut : PATH) |
 | `YTDLP_COOKIES` | *optionnel* : fichier `cookies.txt` pour yt-dlp (voir plus bas) |
@@ -228,7 +256,8 @@ pour une heure de vidéo en 1080p.
 | « L'accès à ton compte YouTube a expiré ou a été révoqué » | Déconnecte-toi puis reconnecte-toi (refresh token expiré : app Google en statut « Test » ?). |
 | « Quota de l'API YouTube dépassé » | Attends minuit (heure du Pacifique). |
 | « Aucune piste de sous-titres disponible » | Vidéo trop récente (sous-titres auto pas encore générés) : réessaie plus tard. |
-| « Le modèle Gemini … est surchargé » | Réessayé automatiquement ; si ça persiste, change `GEMINI_MODEL`. |
+| « Gemini est surchargé (modèles essayés : …) » | Reprise automatique planifiée ; ajoute un modèle de secours dans `GEMINI_MODELS` si ça arrive souvent. |
+| « Quota Gemini atteint » | Quota journalier ou plafond de dépenses : réessaie le lendemain ou augmente le plafond. |
 | « YouTube bloque le téléchargement… » / « Vidéo privée » | Configure `YTDLP_COOKIES`. |
 | « yt-dlp a besoin d'un runtime JavaScript » | Installe Deno. |
 | HTTP 403 au téléchargement | Mets yt-dlp à jour (`yt-dlp -U`, ou redéploie). |

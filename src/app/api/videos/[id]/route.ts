@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { videoVersion } from "@/lib/videos";
+import { getNextRetryAt } from "@/lib/jobs/boss";
 
 /** Statut d'une vidéo pour le polling du front. */
 export async function GET(_request: Request, ctx: RouteContext<"/api/videos/[id]">) {
@@ -20,10 +21,15 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/videos/[id]
   });
   if (!video) return Response.json({ error: "Vidéo introuvable" }, { status: 404 });
 
+  // En attente de reprise : l'heure planifiée par pg-boss fait partie de l'empreinte, pour que
+  // la page se rafraîchisse dès qu'elle est connue.
+  const nextRetryAt = video.status === "WAITING_RETRY" ? await getNextRetryAt(id) : null;
+
   return Response.json({
     status: video.status,
     progress: video.progress,
     error: video.error,
-    version: videoVersion(video, video.clips),
+    nextRetryAt,
+    version: videoVersion(video, video.clips, nextRetryAt),
   });
 }

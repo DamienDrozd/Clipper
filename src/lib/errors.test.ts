@@ -1,33 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ApiError } from "@google/genai";
 import { AppError, isRetryable } from "./errors";
 import { toYouTubeError } from "./youtube/errors";
-import { toLlmError } from "./llm/gemini";
-import { retryDelayUpperBound, MAX_ATTEMPTS } from "./jobs/boss";
+import { renderRetryDelayUpperBound, MAX_PROCESS_ATTEMPTS, MAX_RENDER_ATTEMPTS } from "./jobs/boss";
 
-const apiError = (status: number, message = "erreur") => new ApiError({ status, message });
 const googleError = (status: number, reason?: string) => ({
   message: "erreur",
   response: { status, data: { error: { message: "erreur", errors: reason ? [{ reason }] : [] } } },
-});
-
-describe("isRetryable — Gemini", () => {
-  it.each([429, 500, 502, 503, 504])("réessaie une erreur %i", (status) => {
-    expect(isRetryable(toLlmError(apiError(status), "m"))).toBe(true);
-  });
-
-  it.each([400, 401, 403, 404])("ne réessaie pas une erreur %i (configuration)", (status) => {
-    expect(isRetryable(toLlmError(apiError(status, "API key not valid"), "m"))).toBe(false);
-  });
-
-  it("réessaie une coupure réseau", () => {
-    const error = new TypeError("fetch failed", { cause: { code: "ECONNRESET" } });
-    expect(isRetryable(toLlmError(error, "m"))).toBe(true);
-  });
-
-  it("donne un message lisible pour la surcharge", () => {
-    expect(toLlmError(apiError(503), "gemini-x").message).toBe("Le modèle Gemini « gemini-x » est surchargé.");
-  });
 });
 
 describe("isRetryable — YouTube", () => {
@@ -55,9 +33,13 @@ describe("isRetryable — autres erreurs", () => {
   });
 });
 
-describe("retryDelayUpperBound", () => {
-  it("double à chaque tentative, plafonné à 10 min", () => {
-    expect([0, 1, 2, 3, 4, 5].map(retryDelayUpperBound)).toEqual([60, 120, 240, 480, 600, 600]);
-    expect(MAX_ATTEMPTS).toBe(5);
+describe("politiques de reprise", () => {
+  it("rendu : délai doublé à chaque reprise, plafonné à 10 min", () => {
+    expect([0, 1, 2, 3, 4, 5].map(renderRetryDelayUpperBound)).toEqual([60, 120, 240, 480, 600, 600]);
+    expect(MAX_RENDER_ATTEMPTS).toBe(5);
+  });
+
+  it("pipeline : 5 tentatives au total", () => {
+    expect(MAX_PROCESS_ATTEMPTS).toBe(5);
   });
 });

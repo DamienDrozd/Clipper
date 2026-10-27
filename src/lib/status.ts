@@ -6,6 +6,7 @@ export const VIDEO_STATUS_LABELS: Record<VideoStatus, string> = {
   ANALYZING: "Analyse par l'IA",
   DOWNLOADING: "Téléchargement de la vidéo",
   RENDERING: "Rendu des clips",
+  WAITING_RETRY: "En attente de nouvelle tentative",
   DONE: "Terminé",
   FAILED: "Échec",
 };

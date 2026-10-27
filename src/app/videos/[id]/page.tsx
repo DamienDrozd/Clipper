@@ -8,6 +8,9 @@ import { fileUrl, videoVersion } from "@/lib/videos";
 import { segmentsSchema } from "@/lib/transcript/types";
 import { regenerateSelection, retryVideo } from "@/app/actions";
 import { videoOptionsSchema } from "@/lib/options";
+import { getNextRetryAt } from "@/lib/jobs/boss";
+import { primaryGeminiModel } from "@/lib/env";
+import { LocalTime } from "@/components/local-time";
 import { ActionButton } from "@/components/action-button";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
@@ -45,11 +48,13 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
   const durations = options.success
     ? { min: options.data.minDuration, max: options.data.maxDuration }
     : { min: 20, max: 60 };
+  const nextRetryAt = video.status === "WAITING_RETRY" ? await getNextRetryAt(video.id) : null;
+  const primaryModel = primaryGeminiModel();
 
   return (
     <div className="space-y-6">
       {(!isFinalStatus(video.status) || clipsRendering) && (
-        <StatusPoller videoId={video.id} version={videoVersion(video, video.clips)} />
+        <StatusPoller videoId={video.id} version={videoVersion(video, video.clips, nextRetryAt)} />
       )}
 
       <header className="space-y-2">
@@ -68,6 +73,12 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
           >
             Voir sur YouTube
           </a>
+          {video.analysisModel && (
+            <span className="text-xs" title="Modèle Gemini qui a produit la sélection">
+              Analyse : {video.analysisModel}
+              {primaryModel && video.analysisModel !== primaryModel && " (modèle de secours)"}
+            </span>
+          )}
         </div>
         {video.status === "DOWNLOADING" && (
           <div className="max-w-sm space-y-1 text-xs text-muted">
@@ -82,8 +93,24 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
         )}
       </header>
 
-      {!isFinalStatus(video.status) && video.error && (
-        <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">{video.error}</p>
+      {video.status === "WAITING_RETRY" && (
+        <div className="space-y-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4 text-sm">
+          <p>{video.error ?? "Échec temporaire."}</p>
+          <p className="text-muted">
+            {nextRetryAt ? (
+              <>
+                Nouvelle tentative automatique à <LocalTime iso={nextRetryAt.toISOString()} />.
+              </>
+            ) : (
+              "Nouvelle tentative automatique en cours de planification…"
+            )}
+          </p>
+          <form action={retryVideo.bind(null, video.id)}>
+            <button type="submit" className="rounded-md border border-border bg-background px-3 py-1.5 hover:bg-surface">
+              Relancer maintenant
+            </button>
+          </form>
+        </div>
       )}
 
       {video.status === "FAILED" && (
@@ -91,7 +118,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
           <p>{video.error ?? "Le traitement a échoué."}</p>
           <form action={retryVideo.bind(null, video.id)}>
             <button type="submit" className="rounded-md border border-border bg-background px-3 py-1.5 hover:bg-surface">
-              Réessayer
+              Relancer maintenant
             </button>
           </form>
         </div>
