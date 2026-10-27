@@ -7,7 +7,12 @@ export type AppErrorCode =
   | "QUOTA_EXCEEDED"
   | "AUTH_EXPIRED"
   | "NO_CAPTIONS"
-  | "YOUTUBE_ERROR";
+  | "YOUTUBE_ERROR"
+  | "LLM_CONFIG"
+  | "LLM_QUOTA"
+  | "LLM_ERROR"
+  | "LLM_INVALID"
+  | "NO_CLIPS";
 
 /** Erreur métier dont le message (en français) peut être montré tel quel à l'utilisateur. */
 export class AppError extends Error {

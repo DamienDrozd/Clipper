@@ -1,7 +1,7 @@
 // Worker Clipper : consomme les jobs pg-boss (process séparé du serveur web).
 // Lancement : npm run worker
 import "dotenv/config";
-import { env } from "@/lib/env";
+import { env, geminiConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { getBoss, QUEUES, type ProcessVideoJob } from "@/lib/jobs/boss";
 import { checkBinaries } from "@/lib/media/binaries";
@@ -9,6 +9,8 @@ import { processVideo } from "@/lib/pipeline/process-video";
 
 async function main() {
   env(); // échoue tôt si une variable manque
+  const { model } = geminiConfig();
+  console.log(`✓ Gemini : ${model}`);
   const versions = await checkBinaries();
   for (const [name, version] of Object.entries(versions)) console.log(`✓ ${name} : ${version}`);
 

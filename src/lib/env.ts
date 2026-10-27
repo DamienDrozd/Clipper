@@ -40,6 +40,15 @@ export function env(): Env {
   return cached;
 }
 
+/** Configuration Gemini, obligatoire pour le worker. */
+export function geminiConfig(): { apiKey: string; model: string } {
+  const { GEMINI_API_KEY, GEMINI_MODEL } = env();
+  if (!GEMINI_API_KEY || !GEMINI_MODEL) {
+    throw new Error("GEMINI_API_KEY et GEMINI_MODEL doivent être définis (voir .env.example).");
+  }
+  return { apiKey: GEMINI_API_KEY, model: GEMINI_MODEL };
+}
+
 export function isEmailAllowed(email: string | null | undefined): boolean {
   return !!email && env().ALLOWED_EMAILS.includes(email.toLowerCase());
 }

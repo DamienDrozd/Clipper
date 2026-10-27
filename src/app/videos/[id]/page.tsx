@@ -9,6 +9,7 @@ import { segmentsSchema } from "@/lib/transcript/types";
 import { retryVideo } from "@/app/actions";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
+import { ClipCard } from "@/components/clip-card";
 
 export default function VideoPage(props: PageProps<"/videos/[id]">) {
   return (
@@ -27,7 +28,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
   const [{ id }, user] = await Promise.all([params, requireUser()]);
   const video = await prisma.video.findFirst({
     where: { id, userId: user.id },
-    include: { transcript: true },
+    include: { transcript: true, clips: { orderBy: [{ score: "desc" }, { start: "asc" }] } },
   });
   if (!video) notFound();
 
@@ -64,10 +65,21 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
         </div>
       )}
 
-      {video.transcript && (
+      {video.clips.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Transcription</h2>
-          <p className="text-sm text-muted">
+          <h2 className="text-lg font-semibold">Clips proposés ({video.clips.length})</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {video.clips.map((clip, i) => (
+              <ClipCard key={clip.id} clip={clip} rank={i + 1} youtubeId={video.youtubeId} segments={segments} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {video.transcript && (
+        <details className="space-y-3" open={video.clips.length === 0}>
+          <summary className="cursor-pointer text-lg font-semibold">Transcription</summary>
+          <p className="mt-3 text-sm text-muted">
             Piste {video.transcript.kind === "MANUAL" ? "manuelle" : "auto-générée"} ({video.transcript.language}) ·{" "}
             {segments.length} segments
           </p>
@@ -81,7 +93,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       )}
     </div>
   );
