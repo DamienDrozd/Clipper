@@ -20,6 +20,12 @@ const schema = z.object({
   GEMINI_API_KEY: z.string().min(1).optional(),
   GEMINI_MODEL: z.string().min(1).optional(),
   STORAGE_DIR: z.string().min(1).default("./storage"),
+  // Optionnelles : chemins des binaires (par défaut, recherchés dans le PATH).
+  FFMPEG_PATH: z.string().min(1).default("ffmpeg"),
+  FFPROBE_PATH: z.string().min(1).default("ffprobe"),
+  YTDLP_PATH: z.string().min(1).default("yt-dlp"),
+  // Optionnelle : fichier cookies.txt (format Netscape) pour yt-dlp (vidéos privées, blocage anti-robot).
+  YTDLP_COOKIES: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof schema>;

@@ -6,8 +6,11 @@ export const QUEUES = {
 
 export type ProcessVideoJob = { videoId: string; userId: string };
 
+/** Durée max d'un job (téléchargement d'une longue vidéo + rendu de tous les clips). */
+const JOB_TIMEOUT_SECONDS = 4 * 3600;
+
 const QUEUE_OPTIONS = {
-  [QUEUES.processVideo]: { expireInSeconds: 30 * 60 },
+  [QUEUES.processVideo]: { expireInSeconds: JOB_TIMEOUT_SECONDS },
 };
 
 /**
@@ -56,7 +59,11 @@ export function getBoss(role: Role = "web"): Promise<PgBoss> {
 export async function enqueueProcessVideo(job: ProcessVideoJob): Promise<void> {
   const boss = await getBoss();
   // singletonKey : un seul traitement en file par vidéo.
-  await boss.send(QUEUES.processVideo, job, { singletonKey: job.videoId, ...RETRY_POLICY });
+  await boss.send(QUEUES.processVideo, job, {
+    singletonKey: job.videoId,
+    expireInSeconds: JOB_TIMEOUT_SECONDS,
+    ...RETRY_POLICY,
+  });
 }
 
 /**

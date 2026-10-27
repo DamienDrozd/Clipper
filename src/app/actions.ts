@@ -10,6 +10,9 @@ import { removeVideoFiles } from "@/lib/storage";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 import { getYouTubeClient } from "@/lib/youtube/client";
 import { fetchOwnedVideo } from "@/lib/youtube/metadata";
+import { canResume } from "@/lib/videos";
+
+const unrendered = (clips: { renderStatus: string }[]) => clips.filter((c) => c.renderStatus !== "DONE").length;
 
 export type SubmitVideoState = {
   error?: string;
@@ -40,15 +43,13 @@ export async function submitVideo(_prev: SubmitVideoState, formData: FormData): 
   try {
     const existing = await prisma.video.findUnique({
       where: { youtubeId },
-      include: { _count: { select: { clips: true } } },
+      include: { clips: { select: { renderStatus: true } } },
     });
     if (existing && existing.userId !== user.id) {
       return { error: "Cette vidéo est déjà traitée par un autre compte.", values };
     }
 
-    const needsProcessing =
-      existing?.status === "FAILED" || (existing?.status === "DONE" && existing._count.clips === 0);
-    if (existing && !needsProcessing) {
+    if (existing && !canResume(existing.status, existing.clips.length, unrendered(existing.clips))) {
       // Déjà traitée ou en cours : on affiche simplement sa page.
       videoId = existing.id;
     } else {
@@ -88,11 +89,17 @@ export async function deleteVideo(videoId: string): Promise<void> {
   redirect("/");
 }
 
-/** Relance le pipeline d'une vidéo en échec (les étapes déjà faites sont en cache). */
+/**
+ * Relance le pipeline d'une vidéo en échec ou dont des clips ne sont pas rendus
+ * (les étapes déjà faites sont en cache).
+ */
 export async function retryVideo(videoId: string): Promise<void> {
   const user = await requireUser();
-  const video = await prisma.video.findFirst({ where: { id: videoId, userId: user.id } });
-  if (!video || video.status !== "FAILED") return;
+  const video = await prisma.video.findFirst({
+    where: { id: videoId, userId: user.id },
+    include: { clips: { select: { renderStatus: true } } },
+  });
+  if (!video || !canResume(video.status, video.clips.length, unrendered(video.clips))) return;
 
   await prisma.video.update({ where: { id: video.id }, data: { status: "PENDING", error: null } });
   await enqueueProcessVideo({ videoId: video.id, userId: user.id });

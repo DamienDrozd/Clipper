@@ -48,13 +48,44 @@ qui consomme la file de jobs pg-boss (stockée dans le schéma `pgboss` de la m�
 npm run worker
 ```
 
-Au démarrage, il vérifie la présence de `ffmpeg`, `ffprobe` et `yt-dlp` dans le PATH et s'arrête
-avec un message explicite s'il en manque un. Sous Windows :
+Au démarrage, il vérifie la présence de `ffmpeg`, `ffprobe` et `yt-dlp` et s'arrête avec un
+message explicite s'il en manque un. Il faut aussi **Deno**, que yt-dlp utilise pour YouTube.
 
 ```bash
+# Windows
 winget install Gyan.FFmpeg
-winget install yt-dlp
+winget install yt-dlp.yt-dlp
+winget install DenoLand.Deno
+# Debian / Ubuntu (ffmpeg des dépôts ; yt-dlp en binaire officiel, à jour)
+sudo apt install ffmpeg
+sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+sudo chmod a+rx /usr/local/bin/yt-dlp
+curl -fsSL https://deno.land/install.sh | sh
 ```
+
+ffmpeg doit être compilé avec `libass` et `libx264` (c'est le cas des builds courants). Si plusieurs
+ffmpeg sont installés (sous Windows, ImageMagick en fournit un ancien), indique le bon avec
+`FFMPEG_PATH` / `FFPROBE_PATH` / `YTDLP_PATH`. Pense à mettre yt-dlp à jour régulièrement
+(`yt-dlp -U`) : YouTube change souvent ses protections.
+
+#### Vidéos privées et blocage « confirme que tu n'es pas un robot »
+
+yt-dlp télécharge sans être connecté : les vidéos publiques et non répertoriées passent, pas les
+privées. Depuis un serveur (IP de datacenter), YouTube peut aussi exiger une session. Dans ces cas,
+exporte les cookies d'une session YouTube connectée au format Netscape (`cookies.txt`, par exemple
+avec `yt-dlp --cookies-from-browser firefox --cookies cookies.txt --skip-download <url>`), copie le
+fichier sur la machine du worker et indique son chemin dans `YTDLP_COOKIES`.
+
+### Stockage
+
+Tout est écrit sous `STORAGE_DIR` (rien dans `public/`) et servi par `/api/files/…` à l'utilisateur
+connecté, avec support des requêtes Range :
+
+- `sources/{youtubeId}/source.mp4` : vidéo source (meilleur MP4 ≤ 1080p, H.264), téléchargée une
+  seule fois et gardée en cache pour les rendus suivants ;
+- `clips/{videoId}/` : pour chaque clip, MP4 1080x1920 (H.264 + AAC), SRT et miniature JPG.
+
+Supprimer une vidéo dans l'interface supprime aussi ses fichiers.
 
 ### Quota YouTube
 

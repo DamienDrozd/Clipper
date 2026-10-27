@@ -9,7 +9,7 @@ import { segmentsSchema } from "@/lib/transcript/types";
 import { retryVideo } from "@/app/actions";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
-import { ClipCard } from "@/components/clip-card";
+import { ClipCard, ProgressBar } from "@/components/clip-card";
 import { DeleteVideoButton } from "@/components/delete-video-button";
 
 export default function VideoPage(props: PageProps<"/videos/[id]">) {
@@ -34,10 +34,11 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
   if (!video) notFound();
 
   const segments = video.transcript ? segmentsSchema.parse(video.transcript.segments) : [];
+  const unrenderedCount = video.clips.filter((clip) => clip.renderStatus !== "DONE").length;
 
   return (
     <div className="space-y-6">
-      {!isFinalStatus(video.status) && <StatusPoller videoId={video.id} version={videoVersion(video)} />}
+      {!isFinalStatus(video.status) && <StatusPoller videoId={video.id} version={videoVersion(video, video.clips)} />}
 
       <header className="space-y-2">
         <div className="flex items-start justify-between gap-4">
@@ -56,6 +57,17 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
             Voir sur YouTube
           </a>
         </div>
+        {video.status === "DOWNLOADING" && (
+          <div className="max-w-sm space-y-1 text-xs text-muted">
+            <p>Téléchargement de la vidéo source… {video.progress} %</p>
+            <ProgressBar value={video.progress} />
+          </div>
+        )}
+        {video.status === "RENDERING" && (
+          <p className="text-xs text-muted">
+            {video.clips.filter((c) => c.renderStatus === "DONE").length}/{video.clips.length} clips rendus
+          </p>
+        )}
       </header>
 
       {!isFinalStatus(video.status) && video.error && (
@@ -73,9 +85,20 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
         </div>
       )}
 
+      {video.status === "DONE" && unrenderedCount > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4 text-sm">
+          <p>{unrenderedCount} clip(s) non rendu(s).</p>
+          <form action={retryVideo.bind(null, video.id)}>
+            <button type="submit" className="rounded-md bg-foreground px-3 py-1.5 font-medium text-background hover:opacity-90">
+              Rendre les clips manquants
+            </button>
+          </form>
+        </div>
+      )}
+
       {video.clips.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Clips proposés ({video.clips.length})</h2>
+          <h2 className="text-lg font-semibold">Clips ({video.clips.length})</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {video.clips.map((clip, i) => (
               <ClipCard key={clip.id} clip={clip} rank={i + 1} youtubeId={video.youtubeId} segments={segments} />

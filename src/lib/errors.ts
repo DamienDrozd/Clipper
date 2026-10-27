@@ -12,7 +12,9 @@ export type AppErrorCode =
   | "LLM_QUOTA"
   | "LLM_ERROR"
   | "LLM_INVALID"
-  | "NO_CLIPS";
+  | "NO_CLIPS"
+  | "DOWNLOAD_FAILED"
+  | "RENDER_FAILED";
 
 /** Erreur métier dont le message (en français) peut être montré tel quel à l'utilisateur. */
 export class AppError extends Error {

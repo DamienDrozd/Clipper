@@ -103,6 +103,8 @@ model Video {
   channelTitle String
   thumbnailUrl String?
   status       VideoStatus @default(PENDING)
+  /// Progression de l'étape en cours (téléchargement, rendu), 0-100
+  progress     Int         @default(0)
   error        String?
   /// Options choisies à la soumission : { clipCount, minDuration, maxDuration, language, cropMode }
   options      Json
