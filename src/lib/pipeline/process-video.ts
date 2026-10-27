@@ -8,9 +8,13 @@ import { segmentsSchema } from "@/lib/transcript/types";
 import { selectClips } from "@/lib/llm/select";
 import { replaceClips } from "@/lib/clips/store";
 import type { VideoStatus } from "@/generated/prisma/client";
+import { VideoDeletedError, videoExists, watchDeletion } from "./cancellation";
 
-const setStatus = (videoId: string, status: VideoStatus) =>
-  prisma.video.update({ where: { id: videoId }, data: { status, error: null } });
+/** Change le statut ; lève VideoDeletedError si la vidéo a été supprimée entre-temps. */
+async function setStatus(videoId: string, status: VideoStatus) {
+  const { count } = await prisma.video.updateMany({ where: { id: videoId }, data: { status, error: null } });
+  if (count === 0) throw new VideoDeletedError();
+}
 
 /** Pipeline d'une vidéo, exécuté par le worker. Chaque étape déjà faite est sautée. */
 export async function processVideo({ videoId, userId }: ProcessVideoJob): Promise<void> {
@@ -23,6 +27,7 @@ export async function processVideo({ videoId, userId }: ProcessVideoJob): Promis
     return;
   }
 
+  const deletion = watchDeletion(videoId);
   try {
     const options = videoOptionsSchema.parse(video.options);
 
@@ -47,6 +52,7 @@ export async function processVideo({ videoId, userId }: ProcessVideoJob): Promis
         durationSec: Math.max(video.durationSec, segments.at(-1)?.end ?? 0),
         segments,
         options,
+        signal: deletion.signal,
       });
       await replaceClips(videoId, clips, options.cropMode);
       console.log(`[process-video] ${video.youtubeId} : ${clips.length} clips sélectionnés`);
@@ -56,10 +62,18 @@ export async function processVideo({ videoId, userId }: ProcessVideoJob): Promis
 
     await setStatus(videoId, "DONE");
   } catch (error) {
+    // Suppression pendant le traitement : les écritures échouent (ligne absente, clé
+    // étrangère) ou le signal interrompt l'appel en cours. Rien à signaler.
+    if (error instanceof VideoDeletedError || deletion.signal.aborted || !(await videoExists(videoId))) {
+      console.log(`[process-video] ${video.youtubeId} : vidéo supprimée, traitement interrompu`);
+      return;
+    }
     console.error(`[process-video] ${video.youtubeId} en échec :`, error);
-    await prisma.video.update({
+    await prisma.video.updateMany({
       where: { id: videoId },
       data: { status: "FAILED", error: userMessage(error) },
     });
+  } finally {
+    deletion.stop();
   }
 }

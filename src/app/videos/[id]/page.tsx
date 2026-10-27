@@ -10,6 +10,7 @@ import { retryVideo } from "@/app/actions";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
 import { ClipCard } from "@/components/clip-card";
+import { DeleteVideoButton } from "@/components/delete-video-button";
 
 export default function VideoPage(props: PageProps<"/videos/[id]">) {
   return (
@@ -39,7 +40,10 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
       {!isFinalStatus(video.status) && <StatusPoller videoId={video.id} version={videoVersion(video)} />}
 
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">{video.title}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <h1 className="text-2xl font-semibold">{video.title}</h1>
+          <DeleteVideoButton videoId={video.id} inProgress={!isFinalStatus(video.status)} />
+        </div>
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted">
           <StatusBadge status={video.status} />
           <span>{formatDuration(video.durationSec)}</span>

@@ -5,7 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { userMessage } from "@/lib/errors";
 import { videoOptionsSchema } from "@/lib/options";
-import { enqueueProcessVideo } from "@/lib/jobs/boss";
+import { cancelVideoJobs, enqueueProcessVideo } from "@/lib/jobs/boss";
+import { removeVideoFiles } from "@/lib/storage";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 import { getYouTubeClient } from "@/lib/youtube/client";
 import { fetchOwnedVideo } from "@/lib/youtube/metadata";
@@ -67,6 +68,24 @@ export async function submitVideo(_prev: SubmitVideoState, formData: FormData): 
   }
 
   redirect(`/videos/${videoId}`);
+}
+
+/**
+ * Supprime une vidéo, même en cours de traitement : annule ses jobs en file, efface la ligne
+ * (transcription et clips en cascade) puis ses fichiers. Un job déjà démarré s'arrête de
+ * lui-même en constatant la suppression.
+ */
+export async function deleteVideo(videoId: string): Promise<void> {
+  const user = await requireUser();
+  const video = await prisma.video.findFirst({ where: { id: videoId, userId: user.id } });
+  if (video) {
+    await cancelVideoJobs(video.id);
+    await prisma.video.delete({ where: { id: video.id } });
+    await removeVideoFiles(video).catch((error) =>
+      console.error(`[deleteVideo] fichiers de ${video.youtubeId} non supprimés :`, error),
+    );
+  }
+  redirect("/");
 }
 
 /** Relance le pipeline d'une vidéo en échec (les étapes déjà faites sont en cache). */

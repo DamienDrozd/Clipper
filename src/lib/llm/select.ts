@@ -17,8 +17,9 @@ export async function selectClips(params: {
   durationSec: number;
   segments: Segment[];
   options: VideoOptions;
+  signal?: AbortSignal;
 }): Promise<SelectedClip[]> {
-  const { title, durationSec, segments, options } = params;
+  const { title, durationSec, segments, options, signal } = params;
   const withHours = durationSec >= 3600;
   const overlapSeconds = Math.max(120, options.maxDuration + 30);
   const chunks = chunkSegments(segments, MAX_CHARS_PER_CALL, overlapSeconds);
@@ -27,6 +28,7 @@ export async function selectClips(params: {
 
   // Séquentiel : évite de saturer le quota Gemini sur les longues vidéos.
   for (const [i, chunk] of chunks.entries()) {
+    signal?.throwIfAborted();
     const response = await generateClipSelection(
       system,
       userPrompt({
@@ -39,6 +41,7 @@ export async function selectClips(params: {
             ? { index: i + 1, total: chunks.length, from: chunk[0].start, to: chunk.at(-1)!.end }
             : undefined,
       }),
+      signal,
     );
     candidates.push(...response.clips);
   }

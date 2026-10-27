@@ -57,7 +57,11 @@ function validate(text: string | undefined): { data?: LlmResponse; problem?: str
  * conforme au schéma zod, une seule nouvelle tentative est faite en renvoyant l'erreur
  * au modèle ; ensuite, échec explicite.
  */
-export async function generateClipSelection(system: string, prompt: string): Promise<LlmResponse> {
+export async function generateClipSelection(
+  system: string,
+  prompt: string,
+  signal?: AbortSignal,
+): Promise<LlmResponse> {
   const { ai, model } = getClient();
   const contents: Content[] = [{ role: "user", parts: [{ text: prompt }] }];
   let lastProblem = "";
@@ -73,6 +77,7 @@ export async function generateClipSelection(system: string, prompt: string): Pro
           responseMimeType: "application/json",
           responseJsonSchema: llmResponseJsonSchema,
           temperature: 0.4,
+          abortSignal: signal,
         },
       });
     } catch (error) {

@@ -44,3 +44,15 @@ export async function enqueueProcessVideo(job: ProcessVideoJob): Promise<void> {
   // singletonKey : un seul traitement en file par vidéo.
   await boss.send(QUEUES.processVideo, job, { singletonKey: job.videoId });
 }
+
+/**
+ * Annule les jobs d'une vidéo encore en file. Un job déjà démarré n'est pas interrompu
+ * par pg-boss : le pipeline détecte lui-même la suppression (voir watchDeletion).
+ */
+export async function cancelVideoJobs(videoId: string): Promise<void> {
+  const boss = await getBoss();
+  const jobs = await boss.findJobs(QUEUES.processVideo, { key: videoId, queued: true });
+  if (jobs.length > 0) {
+    await boss.cancel(QUEUES.processVideo, jobs.map((job) => job.id));
+  }
+}

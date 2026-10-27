@@ -17,7 +17,10 @@ export function StatusPoller({ videoId, version }: { videoId: string; version: s
     const timer = setInterval(async () => {
       try {
         const res = await fetch(`/api/videos/${videoId}`, { cache: "no-store" });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        // Vidéo supprimée (depuis un autre onglet) : la page affichera « introuvable ».
+        if (res.status === 404) return router.refresh();
+        if (!res.ok) return;
         const data: { version: string } = await res.json();
         if (data.version !== version) router.refresh();
       } catch {
