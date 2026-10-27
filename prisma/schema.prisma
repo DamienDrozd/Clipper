@@ -145,7 +145,7 @@ model Clip {
   cropMode         CropMode     @default(BLUR)
   /// Zone de la source affichée { x, y, w, h } en fractions 0–1 (null = cadrage par défaut)
   crop             Json?
-  /// Textes de sous-titres corrigés à la main : [{ start, end, text }] (null = transcription d'origine)
+  /// Corrections manuelles des sous-titres : [{ start, end, text }] par segment de la transcription (null = aucune)
   captionOverrides Json?
   renderStatus     RenderStatus @default(PENDING)
   /// Progression du rendu, 0-100

@@ -6,7 +6,9 @@ import { requireUser } from "@/lib/session";
 import { formatDuration, isFinalStatus } from "@/lib/status";
 import { fileUrl, videoVersion } from "@/lib/videos";
 import { segmentsSchema } from "@/lib/transcript/types";
-import { retryVideo } from "@/app/actions";
+import { regenerateSelection, retryVideo } from "@/app/actions";
+import { videoOptionsSchema } from "@/lib/options";
+import { ActionButton } from "@/components/action-button";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
 import { ClipCard, ProgressBar } from "@/components/clip-card";
@@ -39,6 +41,10 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
   const clipsRendering = video.clips.some((clip) => clip.renderStatus === "QUEUED" || clip.renderStatus === "RENDERING");
   const sourceUrl = video.sourcePath ? fileUrl(video.sourcePath) : null;
   const editDisabledReason = isFinalStatus(video.status) ? undefined : "Disponible à la fin du traitement";
+  const options = videoOptionsSchema.safeParse(video.options);
+  const durations = options.success
+    ? { min: options.data.minDuration, max: options.data.maxDuration }
+    : { min: 20, max: 60 };
 
   return (
     <div className="space-y-6">
@@ -104,7 +110,18 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
 
       {video.clips.length > 0 && (
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold">Clips ({video.clips.length})</h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold">Clips ({video.clips.length})</h2>
+            <ActionButton
+              action={regenerateSelection.bind(null, video.id)}
+              label="Régénérer la sélection"
+              pendingLabel="Relance de l'analyse…"
+              confirm="Relancer l'analyse par l'IA ? Les clips actuels, leurs rendus, recadrages et corrections seront remplacés. La transcription et la vidéo source ne sont pas retéléchargées."
+              disabledReason={
+                editDisabledReason ?? (clipsRendering ? "Disponible à la fin des rendus en cours" : undefined)
+              }
+            />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {video.clips.map((clip, i) => (
               <ClipCard
@@ -115,6 +132,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
                 segments={segments}
                 sourceUrl={sourceUrl}
                 editDisabledReason={editDisabledReason}
+                durations={durations}
               />
             ))}
           </div>

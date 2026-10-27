@@ -3,7 +3,11 @@ import type { Segment } from "@/lib/transcript/types";
 import { formatClock } from "@/lib/transcript/format";
 import { downloadName, fileUrl } from "@/lib/videos";
 import { cropRectSchema } from "@/lib/clips/crop";
+import { applyCaptionOverrides, captionOverridesSchema } from "@/lib/captions/overrides";
+import { rerenderClip } from "@/app/actions";
 import { CropEditorButton } from "./crop-editor";
+import { ClipEditButton } from "./clip-edit-dialog";
+import { ActionButton } from "./action-button";
 
 function scoreTone(score: number) {
   if (score >= 80) return "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400";
@@ -20,16 +24,25 @@ export function ClipCard({
   segments,
   sourceUrl,
   editDisabledReason,
+  durations,
 }: {
   clip: Clip;
   rank: number;
   youtubeId: string;
   segments: Segment[];
-  /** Vidéo source servie par /api/files (pour l'éditeur de cadrage), null si pas encore téléchargée. */
+  /** Vidéo source servie par /api/files (éditeurs, aperçu), null si pas encore téléchargée. */
   sourceUrl: string | null;
   editDisabledReason?: string;
+  /** Durées min/max choisies à la soumission de la vidéo. */
+  durations: { min: number; max: number };
 }) {
-  const excerpt = segments.filter((s) => s.end > clip.start && s.start < clip.end);
+  const overridesResult = clip.captionOverrides ? captionOverridesSchema.safeParse(clip.captionOverrides) : null;
+  const overrides = overridesResult?.success ? overridesResult.data : null;
+  const excerpt = applyCaptionOverrides(segments, overrides).filter(
+    (s) => s.end > clip.start && s.start < clip.end && s.text,
+  );
+  // Contexte de l'éditeur : 2 min de transcription de part et d'autre du clip.
+  const context = segments.filter((s) => s.end > clip.start - 120 && s.start < clip.end + 120);
   const crop = clip.crop ? cropRectSchema.safeParse(clip.crop) : null;
 
   return (
@@ -78,6 +91,18 @@ export function ClipCard({
               )}
             </>
           )}
+          <ClipEditButton
+            clipId={clip.id}
+            title={clip.title}
+            start={clip.start}
+            end={clip.end}
+            context={context}
+            overrides={overrides}
+            sourceUrl={sourceUrl}
+            minDuration={durations.min}
+            maxDuration={durations.max}
+            disabledReason={editDisabledReason}
+          />
           <CropEditorButton
             clipId={clip.id}
             title={clip.title}
@@ -88,6 +113,14 @@ export function ClipCard({
             crop={crop?.success ? crop.data : null}
             disabledReason={editDisabledReason}
           />
+          {clip.renderStatus === "FAILED" && (
+            <ActionButton
+              action={rerenderClip.bind(null, clip.id)}
+              label="Relancer le rendu"
+              pendingLabel="Relance…"
+              disabledReason={editDisabledReason}
+            />
+          )}
         </div>
 
         <details className="mt-auto text-sm">

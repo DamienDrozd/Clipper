@@ -3,7 +3,8 @@ import path from "node:path";
 import { prisma } from "@/lib/prisma";
 import { buildAss, buildSrt, clipCues, wordChunks } from "@/lib/captions/captions";
 import { extractThumbnail, renderVertical } from "@/lib/media/ffmpeg";
-import { segmentsSchema, type Segment } from "@/lib/transcript/types";
+import { segmentsSchema } from "@/lib/transcript/types";
+import { applyCaptionOverrides, captionOverridesSchema } from "@/lib/captions/overrides";
 import { clipsDir, removeStorageFiles, toStoragePath } from "@/lib/storage";
 import { cropRectSchema } from "@/lib/clips/crop";
 
@@ -38,7 +39,10 @@ export async function renderClip(clipId: string, sourceFile: string, signal?: Ab
     data: { renderStatus: "RENDERING", renderProgress: 0, renderError: null },
   });
 
-  const captionSource: Segment[] = segmentsSchema.parse(clip.captionOverrides ?? clip.video.transcript?.segments ?? []);
+  const captionSource = applyCaptionOverrides(
+    segmentsSchema.parse(clip.video.transcript?.segments ?? []),
+    clip.captionOverrides ? captionOverridesSchema.parse(clip.captionOverrides) : null,
+  );
   const cues = clipCues(captionSource, clip.start, clip.end);
 
   const dir = clipsDir(clip.video.id);

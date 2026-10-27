@@ -11,7 +11,9 @@ import { videoOptionsSchema } from "@/lib/options";
 import { isFinalStatus } from "@/lib/status";
 import { cropRectSchema, roundCrop } from "@/lib/clips/crop";
 import { cancelVideoJobs, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
-import { removeVideoFiles } from "@/lib/storage";
+import { removeStorageFiles, removeVideoFiles } from "@/lib/storage";
+import { segmentsSchema } from "@/lib/transcript/types";
+import { captionOverridesSchema, mergeCaptionOverrides } from "@/lib/captions/overrides";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 import { getYouTubeClient } from "@/lib/youtube/client";
 import { fetchOwnedVideo } from "@/lib/youtube/metadata";
@@ -151,6 +153,124 @@ export async function updateClipFraming(clipId: string, input: FramingInput): Pr
     await enqueueRenderClip({ clipId: clip.id, videoId: clip.videoId });
   } catch (error) {
     console.error("[updateClipFraming]", error);
+    return { error: userMessage(error) };
+  }
+  refresh();
+  return {};
+}
+
+/** Clip de l'utilisateur, modifiable seulement une fois le traitement de la vidéo terminé. */
+async function findEditableClip(userId: string, clipId: string) {
+  const clip = await prisma.clip.findFirst({
+    where: { id: clipId, video: { userId } },
+    include: { video: { select: { status: true, durationSec: true, transcript: { select: { segments: true } } } } },
+  });
+  if (!clip) return { error: "Clip introuvable." } as const;
+  if (!isFinalStatus(clip.video.status)) {
+    return { error: "Attends la fin du traitement de la vidéo avant de modifier un clip." } as const;
+  }
+  return { clip } as const;
+}
+
+const clipEditSchema = z
+  .object({
+    title: z.string().trim().min(1, "Le titre est requis.").max(150, "Titre trop long (150 caractères max)."),
+    start: z.number().min(0, "Le début ne peut pas être négatif."),
+    end: z.number(),
+    /** Textes de sous-titres saisis, par clé de segment (voir segmentKey). */
+    captions: z.record(z.string(), z.string().max(500)),
+  })
+  .refine((v) => v.end - v.start >= 1, "Le clip doit durer au moins 1 s.")
+  .refine((v) => v.end - v.start <= 180, "Le clip ne peut pas dépasser 180 s.");
+
+export type ClipEditInput = z.infer<typeof clipEditSchema>;
+
+/**
+ * Modifie un clip (titre, début/fin, corrections de sous-titres). Un nouveau rendu est lancé
+ * si le passage ou les sous-titres changent ; un simple changement de titre n'en a pas besoin.
+ */
+export async function updateClip(clipId: string, input: ClipEditInput): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const parsed = clipEditSchema.safeParse(input);
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Modification invalide." };
+
+  const found = await findEditableClip(user.id, clipId);
+  if ("error" in found) return { error: found.error };
+  const { clip } = found;
+
+  const segments = segmentsSchema.parse(clip.video.transcript?.segments ?? []);
+  const maxEnd = Math.max(clip.video.durationSec, segments.at(-1)?.end ?? 0);
+  const { title, captions } = parsed.data;
+  const start = Math.round(parsed.data.start * 1000) / 1000;
+  const end = Math.round(parsed.data.end * 1000) / 1000;
+  if (end > maxEnd + 0.5) return { error: "La fin dépasse la durée de la vidéo." };
+
+  const existing = clip.captionOverrides ? captionOverridesSchema.parse(clip.captionOverrides) : null;
+  const overrides = mergeCaptionOverrides(segments, existing, captions);
+  const needsRender =
+    start !== clip.start || end !== clip.end || JSON.stringify(overrides) !== JSON.stringify(existing);
+
+  try {
+    await prisma.clip.update({
+      where: { id: clip.id },
+      data: {
+        title,
+        start,
+        end,
+        captionOverrides: overrides ?? Prisma.DbNull,
+        ...(needsRender ? { renderStatus: "QUEUED", renderProgress: 0, renderError: null } : {}),
+      },
+    });
+    if (needsRender) await enqueueRenderClip({ clipId: clip.id, videoId: clip.videoId });
+  } catch (error) {
+    console.error("[updateClip]", error);
+    return { error: userMessage(error) };
+  }
+  refresh();
+  return {};
+}
+
+/** Relance le rendu d'un clip tel quel (par exemple après un échec). */
+export async function rerenderClip(clipId: string): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const found = await findEditableClip(user.id, clipId);
+  if ("error" in found) return { error: found.error };
+
+  await prisma.clip.update({
+    where: { id: clipId },
+    data: { renderStatus: "QUEUED", renderProgress: 0, renderError: null },
+  });
+  await enqueueRenderClip({ clipId, videoId: found.clip.videoId });
+  refresh();
+  return {};
+}
+
+/**
+ * « Régénérer la sélection » : supprime les clips (et leurs rendus) puis relance le pipeline,
+ * qui refait seulement l'analyse Gemini et les rendus — transcription et vidéo source sont en cache.
+ */
+export async function regenerateSelection(videoId: string): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const video = await prisma.video.findFirst({
+    where: { id: videoId, userId: user.id },
+    include: { clips: { select: { renderStatus: true, mp4Path: true, srtPath: true, thumbPath: true } } },
+  });
+  if (!video) return { error: "Vidéo introuvable." };
+  if (!isFinalStatus(video.status)) return { error: "Attends la fin du traitement en cours." };
+  if (video.clips.some((c) => c.renderStatus === "QUEUED" || c.renderStatus === "RENDERING")) {
+    return { error: "Attends la fin des rendus en cours." };
+  }
+
+  try {
+    await cancelVideoJobs(video.id);
+    await prisma.$transaction([
+      prisma.clip.deleteMany({ where: { videoId: video.id } }),
+      prisma.video.update({ where: { id: video.id }, data: { status: "PENDING", error: null, progress: 0 } }),
+    ]);
+    await removeStorageFiles(video.clips.flatMap((c) => [c.mp4Path, c.srtPath, c.thumbPath]));
+    await enqueueProcessVideo({ videoId: video.id, userId: user.id });
+  } catch (error) {
+    console.error("[regenerateSelection]", error);
     return { error: userMessage(error) };
   }
   refresh();
