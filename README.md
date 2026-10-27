@@ -39,11 +39,35 @@ npm run dev
 Ouvre http://localhost:3000 : tu es redirigé vers `/login`. Seuls les emails listés dans
 `ALLOWED_EMAILS` (séparés par des virgules) peuvent se connecter.
 
+### Worker
+
+Les traitements longs (transcription, IA, téléchargement, rendu) tournent dans un process séparé
+qui consomme la file de jobs pg-boss (stockée dans le schéma `pgboss` de la même base) :
+
+```bash
+npm run worker
+```
+
+Au démarrage, il vérifie la présence de `ffmpeg`, `ffprobe` et `yt-dlp` dans le PATH et s'arrête
+avec un message explicite s'il en manque un. Sous Windows :
+
+```bash
+winget install Gyan.FFmpeg
+winget install yt-dlp
+```
+
+### Quota YouTube
+
+Quota par défaut : 10 000 unités par jour. Une vidéo consomme environ 252 unités
+(`videos.list` + `channels.list` : 2, `captions.list` : 50, `captions.download` : 200).
+La transcription est mise en cache en base et n'est jamais retéléchargée.
+
 ## Scripts
 
 | Script | Rôle |
 | --- | --- |
 | `npm run dev` | serveur de développement |
+| `npm run worker` | worker de traitement (process séparé) |
 | `npm run build` / `npm run start` | build et serveur de production |
 | `npm run db:migrate` | applique les migrations (prod et local) |
 | `npm run db:migrate:dev` | crée une nouvelle migration après modification du schéma |

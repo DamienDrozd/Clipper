@@ -11,15 +11,18 @@
     "test": "vitest run",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "worker": "tsx worker/index.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.3",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "googleapis": "^188.0.0",
     "next": "16.4.3",
     "next-auth": "^5.0.0-beta.32",
     "pg": "^8.23.1",
+    "pg-boss": "^12.38.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "zod": "^4.6.7"
