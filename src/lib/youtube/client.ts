@@ -25,7 +25,9 @@ export async function getYouTubeClient(userId: string): Promise<youtube_v3.Youtu
     refresh_token: account.refresh_token,
     expiry_date: account.expires_at ? account.expires_at * 1000 : null,
     scope: account.scope ?? undefined,
-    token_type: account.token_type ?? undefined,
+    // Pas de token_type : Auth.js stocke "bearer" en minuscules, que google-auth-library
+    // recopie tel quel dans l'en-tête Authorization… et que Google ignore (requête vue
+    // comme anonyme : « Method doesn't allow unregistered callers »). Défaut : "Bearer".
   });
 
   // Émis à chaque rafraîchissement (y compris pendant un job long).
