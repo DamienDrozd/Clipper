@@ -1,11 +1,16 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { refresh } from "next/cache";
+import { z } from "zod";
+import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { userMessage } from "@/lib/errors";
 import { videoOptionsSchema } from "@/lib/options";
-import { cancelVideoJobs, enqueueProcessVideo } from "@/lib/jobs/boss";
+import { isFinalStatus } from "@/lib/status";
+import { cropRectSchema, roundCrop } from "@/lib/clips/crop";
+import { cancelVideoJobs, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
 import { removeVideoFiles } from "@/lib/storage";
 import { parseYouTubeUrl } from "@/lib/youtube/url";
 import { getYouTubeClient } from "@/lib/youtube/client";
@@ -104,4 +109,50 @@ export async function retryVideo(videoId: string): Promise<void> {
   await prisma.video.update({ where: { id: video.id }, data: { status: "PENDING", error: null } });
   await enqueueProcessVideo({ videoId: video.id, userId: user.id });
   redirect(`/videos/${video.id}`);
+}
+
+const framingSchema = z.object({
+  cropMode: z.enum(["CENTER", "BLUR"]),
+  crop: cropRectSchema.nullable(),
+});
+
+export type FramingInput = z.infer<typeof framingSchema>;
+
+/**
+ * Enregistre le cadrage d'un clip (mode + zone de la source) et lance son nouveau rendu.
+ * Refusé pendant le traitement de la vidéo, pour ne pas rendre le clip deux fois en parallèle.
+ */
+export async function updateClipFraming(clipId: string, input: FramingInput): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const parsed = framingSchema.safeParse(input);
+  if (!parsed.success) return { error: "Cadrage invalide." };
+
+  const clip = await prisma.clip.findFirst({
+    where: { id: clipId, video: { userId: user.id } },
+    select: { id: true, videoId: true, video: { select: { status: true } } },
+  });
+  if (!clip) return { error: "Clip introuvable." };
+  if (!isFinalStatus(clip.video.status)) {
+    return { error: "Attends la fin du traitement de la vidéo avant de recadrer un clip." };
+  }
+
+  const { cropMode, crop } = parsed.data;
+  try {
+    await prisma.clip.update({
+      where: { id: clip.id },
+      data: {
+        cropMode,
+        crop: crop ? roundCrop(crop) : Prisma.DbNull,
+        renderStatus: "QUEUED",
+        renderProgress: 0,
+        renderError: null,
+      },
+    });
+    await enqueueRenderClip({ clipId: clip.id, videoId: clip.videoId });
+  } catch (error) {
+    console.error("[updateClipFraming]", error);
+    return { error: userMessage(error) };
+  }
+  refresh();
+  return {};
 }

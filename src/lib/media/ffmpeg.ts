@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { AppError } from "@/lib/errors";
 import { bin } from "./binaries";
-import { buildVideoFilter, type CropMode } from "./filters";
+import { buildVideoFilter, type CropArea, type CropMode } from "./filters";
 import { MissingBinaryError, ProcessError, runProcess } from "./process";
 
 const execFileAsync = promisify(execFile);
@@ -50,6 +50,7 @@ export async function renderVertical(params: {
   start: number;
   end: number;
   cropMode: CropMode;
+  crop?: CropArea | null;
   assFile: string;
   fontsDir: string;
   output: string;
@@ -64,7 +65,8 @@ export async function renderVertical(params: {
     "-ss", params.start.toFixed(3),
     "-i", params.source,
     "-t", duration.toFixed(3),
-    "-filter_complex", buildVideoFilter(params.cropMode, { assFile: params.assFile, fontsDir: params.fontsDir }),
+    "-filter_complex",
+    buildVideoFilter(params.cropMode, { assFile: params.assFile, fontsDir: params.fontsDir }, params.crop),
     "-map", "[v]",
     "-map", "0:a:0?",
     "-c:v", "libx264",

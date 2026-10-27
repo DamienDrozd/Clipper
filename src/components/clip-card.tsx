@@ -2,6 +2,8 @@ import type { Clip } from "@/generated/prisma/client";
 import type { Segment } from "@/lib/transcript/types";
 import { formatClock } from "@/lib/transcript/format";
 import { downloadName, fileUrl } from "@/lib/videos";
+import { cropRectSchema } from "@/lib/clips/crop";
+import { CropEditorButton } from "./crop-editor";
 
 function scoreTone(score: number) {
   if (score >= 80) return "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400";
@@ -9,20 +11,26 @@ function scoreTone(score: number) {
   return "border-border bg-surface text-muted";
 }
 
-const CROP_LABELS = { BLUR: "Flou en fond", CENTER: "Crop central" } as const;
+const CROP_LABELS = { BLUR: "Flou en fond", CENTER: "Remplir l'écran" } as const;
 
 export function ClipCard({
   clip,
   rank,
   youtubeId,
   segments,
+  sourceUrl,
+  editDisabledReason,
 }: {
   clip: Clip;
   rank: number;
   youtubeId: string;
   segments: Segment[];
+  /** Vidéo source servie par /api/files (pour l'éditeur de cadrage), null si pas encore téléchargée. */
+  sourceUrl: string | null;
+  editDisabledReason?: string;
 }) {
   const excerpt = segments.filter((s) => s.end > clip.start && s.start < clip.end);
+  const crop = clip.crop ? cropRectSchema.safeParse(clip.crop) : null;
 
   return (
     <article className="flex flex-col overflow-hidden rounded-lg border border-border">
@@ -45,29 +53,42 @@ export function ClipCard({
         <p className="text-xs text-muted">
           {formatClock(clip.start)} → {formatClock(clip.end)} · {Math.round(clip.end - clip.start)} s ·{" "}
           {CROP_LABELS[clip.cropMode]}
+          {crop?.success && " (cadrage personnalisé)"}
         </p>
 
         <blockquote className="border-l-2 border-border pl-3 text-sm italic">« {clip.hook} »</blockquote>
         <p className="text-sm text-muted">{clip.reason}</p>
 
-        {clip.renderStatus === "DONE" && clip.mp4Path && (
-          <div className="flex flex-wrap gap-2">
-            <a
-              href={fileUrl(clip.mp4Path, downloadName(clip.title, "mp4"))}
-              className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-90"
-            >
-              Télécharger MP4
-            </a>
-            {clip.srtPath && (
+        <div className="flex flex-wrap gap-2">
+          {clip.renderStatus === "DONE" && clip.mp4Path && (
+            <>
               <a
-                href={fileUrl(clip.srtPath, downloadName(clip.title, "srt"))}
-                className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface"
+                href={fileUrl(clip.mp4Path, downloadName(clip.title, "mp4"))}
+                className="rounded-md bg-foreground px-3 py-1.5 text-sm font-medium text-background hover:opacity-90"
               >
-                SRT
+                Télécharger MP4
               </a>
-            )}
-          </div>
-        )}
+              {clip.srtPath && (
+                <a
+                  href={fileUrl(clip.srtPath, downloadName(clip.title, "srt"))}
+                  className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface"
+                >
+                  SRT
+                </a>
+              )}
+            </>
+          )}
+          <CropEditorButton
+            clipId={clip.id}
+            title={clip.title}
+            sourceUrl={sourceUrl}
+            start={clip.start}
+            end={clip.end}
+            cropMode={clip.cropMode}
+            crop={crop?.success ? crop.data : null}
+            disabledReason={editDisabledReason}
+          />
+        </div>
 
         <details className="mt-auto text-sm">
           <summary className="cursor-pointer text-muted hover:text-foreground">Transcription du passage</summary>

@@ -143,6 +143,8 @@ model Clip {
   score            Int
   reason           String
   cropMode         CropMode     @default(BLUR)
+  /// Zone de la source affichée { x, y, w, h } en fractions 0–1 (null = cadrage par défaut)
+  crop             Json?
   /// Textes de sous-titres corrigés à la main : [{ start, end, text }] (null = transcription d'origine)
   captionOverrides Json?
   renderStatus     RenderStatus @default(PENDING)

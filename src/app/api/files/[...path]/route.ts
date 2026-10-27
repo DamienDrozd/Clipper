@@ -19,9 +19,17 @@ function contentDisposition(filename: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
+/** Le fichier appartient-il à une vidéo de l'utilisateur ? clips/{videoId}/… ou sources/{youtubeId}/… */
+async function isOwned(area: string | undefined, id: string | undefined, userId: string): Promise<boolean> {
+  if (!id) return false;
+  if (area === "clips") return (await prisma.video.count({ where: { id, userId } })) > 0;
+  if (area === "sources") return (await prisma.video.count({ where: { youtubeId: id, userId } })) > 0;
+  return false;
+}
+
 /**
- * Sert les fichiers de STORAGE_DIR/clips/{videoId}/… à leur propriétaire, avec support des
- * requêtes Range (lecture et déplacement dans le lecteur vidéo du navigateur).
+ * Sert les fichiers de STORAGE_DIR (rendus des clips, vidéo source pour l'éditeur de cadrage)
+ * à leur propriétaire, avec support des requêtes Range (lecture et déplacement dans le lecteur).
  * `?download=<nom>` force le téléchargement sous ce nom.
  */
 export async function GET(request: Request, ctx: RouteContext<"/api/files/[...path]">) {
@@ -29,13 +37,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/files/[...pa
   if (!user) return new Response("Non authentifié", { status: 401 });
 
   const { path: segments } = await ctx.params;
-  const [area, videoId] = segments;
+  const [area, id] = segments;
   const extension = path.extname(segments.at(-1) ?? "").toLowerCase();
   const absolute = resolveStoragePath(segments.join("/"));
-  if (area !== "clips" || !videoId || !absolute || !(extension in CONTENT_TYPES)) {
-    return new Response("Introuvable", { status: 404 });
-  }
-  if ((await prisma.video.count({ where: { id: videoId, userId: user.id } })) === 0) {
+  if (!absolute || !(extension in CONTENT_TYPES) || !(await isOwned(area, id, user.id))) {
     return new Response("Introuvable", { status: 404 });
   }
 
@@ -51,8 +56,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/files/[...pa
   const headers = new Headers({
     "Content-Type": CONTENT_TYPES[extension],
     "Accept-Ranges": "bytes",
-    // Les noms de fichiers changent à chaque rendu : contenu immuable pour une URL donnée.
-    "Cache-Control": "private, max-age=31536000, immutable",
+    // Les rendus changent de nom à chaque rendu : contenu immuable pour une URL donnée.
+    // La source garde son nom (elle peut être retéléchargée après suppression) : cache court.
+    "Cache-Control": area === "clips" ? "private, max-age=31536000, immutable" : "private, max-age=3600",
   });
   const download = new URL(request.url).searchParams.get("download");
   if (download) headers.set("Content-Disposition", contentDisposition(download));

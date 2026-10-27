@@ -5,6 +5,7 @@ import { buildAss, buildSrt, clipCues, wordChunks } from "@/lib/captions/caption
 import { extractThumbnail, renderVertical } from "@/lib/media/ffmpeg";
 import { segmentsSchema, type Segment } from "@/lib/transcript/types";
 import { clipsDir, removeStorageFiles, toStoragePath } from "@/lib/storage";
+import { cropRectSchema } from "@/lib/clips/crop";
 
 const FONTS_DIR = path.resolve("assets/fonts");
 
@@ -54,6 +55,7 @@ export async function renderClip(clipId: string, sourceFile: string, signal?: Ab
       start: clip.start,
       end: clip.end,
       cropMode: clip.cropMode,
+      crop: clip.crop ? cropRectSchema.parse(clip.crop) : null,
       assFile: files.ass,
       fontsDir: FONTS_DIR,
       output: files.tmp,

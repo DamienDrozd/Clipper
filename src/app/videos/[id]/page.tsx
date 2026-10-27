@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { formatDuration, isFinalStatus } from "@/lib/status";
-import { videoVersion } from "@/lib/videos";
+import { fileUrl, videoVersion } from "@/lib/videos";
 import { segmentsSchema } from "@/lib/transcript/types";
 import { retryVideo } from "@/app/actions";
 import { StatusBadge } from "@/components/status-badge";
@@ -35,10 +35,16 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
 
   const segments = video.transcript ? segmentsSchema.parse(video.transcript.segments) : [];
   const unrenderedCount = video.clips.filter((clip) => clip.renderStatus !== "DONE").length;
+  // Rendus individuels en cours (après un recadrage) : la page continue de se rafraîchir.
+  const clipsRendering = video.clips.some((clip) => clip.renderStatus === "QUEUED" || clip.renderStatus === "RENDERING");
+  const sourceUrl = video.sourcePath ? fileUrl(video.sourcePath) : null;
+  const editDisabledReason = isFinalStatus(video.status) ? undefined : "Disponible à la fin du traitement";
 
   return (
     <div className="space-y-6">
-      {!isFinalStatus(video.status) && <StatusPoller videoId={video.id} version={videoVersion(video, video.clips)} />}
+      {(!isFinalStatus(video.status) || clipsRendering) && (
+        <StatusPoller videoId={video.id} version={videoVersion(video, video.clips)} />
+      )}
 
       <header className="space-y-2">
         <div className="flex items-start justify-between gap-4">
@@ -85,7 +91,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
         </div>
       )}
 
-      {video.status === "DONE" && unrenderedCount > 0 && (
+      {video.status === "DONE" && unrenderedCount > 0 && !clipsRendering && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4 text-sm">
           <p>{unrenderedCount} clip(s) non rendu(s).</p>
           <form action={retryVideo.bind(null, video.id)}>
@@ -101,7 +107,15 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
           <h2 className="text-lg font-semibold">Clips ({video.clips.length})</h2>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {video.clips.map((clip, i) => (
-              <ClipCard key={clip.id} clip={clip} rank={i + 1} youtubeId={video.youtubeId} segments={segments} />
+              <ClipCard
+                key={clip.id}
+                clip={clip}
+                rank={i + 1}
+                youtubeId={video.youtubeId}
+                segments={segments}
+                sourceUrl={sourceUrl}
+                editDisabledReason={editDisabledReason}
+              />
             ))}
           </div>
         </section>

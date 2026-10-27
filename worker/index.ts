@@ -3,9 +3,10 @@
 import "dotenv/config";
 import { env, geminiConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { getBoss, QUEUES, type ProcessVideoJob } from "@/lib/jobs/boss";
+import { getBoss, QUEUES, type ProcessVideoJob, type RenderClipJob } from "@/lib/jobs/boss";
 import { checkBinaries } from "@/lib/media/binaries";
 import { processVideo } from "@/lib/pipeline/process-video";
+import { rerenderClip } from "@/lib/pipeline/rerender-clip";
 
 async function main() {
   env(); // échoue tôt si une variable manque
@@ -19,6 +20,10 @@ async function main() {
   await boss.work<ProcessVideoJob>(QUEUES.processVideo, { localConcurrency: 1 }, async ([job]) => {
     // Une exception ici = erreur passagère : pg-boss replanifie le job (voir RETRY_POLICY).
     await processVideo(job.data, job.retryCount);
+  });
+  // Un rendu à la fois : deux modifications successives d'un même clip sont rendues dans l'ordre.
+  await boss.work<RenderClipJob>(QUEUES.renderClip, { localConcurrency: 1 }, async ([job]) => {
+    await rerenderClip(job.data, job.retryCount);
   });
 
   console.log("Worker prêt, en attente de jobs…");
