@@ -27,7 +27,7 @@ async function version(command: string, args: string[]): Promise<string | null> 
 }
 
 /** Binaire autonome officiel de yt-dlp pour la plateforme courante (Linux uniquement), ou null. */
-export function ytDlpReleaseUrl(platform = process.platform, arch = process.arch): string | null {
+export function ytDlpReleaseUrl(platform: string = process.platform, arch: string = process.arch): string | null {
   if (platform !== "linux") return null;
   const asset = arch === "arm64" ? "yt-dlp_linux_aarch64" : arch === "x64" ? "yt-dlp_linux" : null;
   return asset ? `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}` : null;
