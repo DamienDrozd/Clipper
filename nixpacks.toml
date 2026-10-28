@@ -2,13 +2,19 @@
 # - ffmpeg via apt (build Ubuntu, avec libass et libx264) ;
 # - Deno, runtime JavaScript dont yt-dlp a besoin pour YouTube ;
 # - yt-dlp en binaire autonome officiel, dernière version à chaque build (YouTube change souvent).
+#
+# yt-dlp est installé dans une phase à part : la commande d'installation saisie dans Coolify
+# (« npm install ») remplace celle de la phase install, elle n'affecte pas cette phase.
 
 [phases.setup]
 nixPkgs = ["...", "deno"]
 aptPkgs = ["...", "ffmpeg", "curl", "ca-certificates"]
 
-[phases.install]
+[phases.tools]
+dependsOn = ["setup"]
 cmds = [
-  "npm ci",
   "curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux && chmod a+rx /usr/local/bin/yt-dlp",
 ]
+
+[phases.install]
+dependsOn = ["setup", "tools"]

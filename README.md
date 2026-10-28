@@ -212,8 +212,12 @@ destination `/data/clipper`. Puis `STORAGE_DIR=/data/clipper` dans les variables
 ### 3. Ressource « web »
 
 - Source : ce dépôt Git, build pack **Nixpacks**.
-- Build : `npm run build` · Start : `npm run start` · Port exposé : `3000`.
-- **Pre-deployment command** : `npx prisma migrate deploy` (migrations appliquées à chaque déploiement).
+- Build : `npm run build` · **Start : `npm run start:prod`** · Port exposé : `3000`.
+  `start:prod` applique les migrations (`prisma migrate deploy`) puis lance Next. N'utilise pas la
+  « Pre-deployment command » de Coolify pour ça : elle s'exécute dans le conteneur précédent et est
+  donc ignorée au premier déploiement.
+- Install : laisse `npm install` (ou vide). yt-dlp est installé dans une phase à part de
+  `nixpacks.toml`, que la commande d'installation de Coolify ne remplace pas.
 - Domaine : `https://ton-domaine` (ajoute l'URI de redirection Google correspondante).
 - Variables : toutes celles du tableau ci-dessus.
 
@@ -279,6 +283,7 @@ pour une heure de vidéo en 1080p.
 | --- | --- |
 | `npm run dev` | serveur de développement |
 | `npm run build` / `npm run start` | build et serveur de production |
+| `npm run start:prod` | migrations puis serveur de production (Coolify) |
 | `npm run worker` | worker de traitement (process séparé) |
 | `npm run db:migrate` | applique les migrations |
 | `npm run db:migrate:dev` | crée une migration après modification du schéma |
