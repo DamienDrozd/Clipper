@@ -10,7 +10,8 @@ import { userMessage } from "@/lib/errors";
 import { videoOptionsSchema } from "@/lib/options";
 import { isFinalStatus } from "@/lib/status";
 import { cropRectSchema, roundCrop } from "@/lib/clips/crop";
-import { cancelVideoJobs, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
+import { cancelVideoJobs, enqueueGenerateTexts, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
+import { normalizePublishTexts } from "@/lib/clips/postprocess";
 import { removeStorageFiles, removeVideoFiles } from "@/lib/storage";
 import { segmentsSchema } from "@/lib/transcript/types";
 import { captionOverridesSchema, mergeCaptionOverrides } from "@/lib/captions/overrides";
@@ -278,4 +279,82 @@ export async function regenerateSelection(videoId: string): Promise<{ error?: st
   }
   refresh();
   return {};
+}
+
+// ---------------------------------------------------------------------------
+// Textes de publication et réglages de la chaîne
+// ---------------------------------------------------------------------------
+
+const clipTextsSchema = z.object({
+  publishTitle: z.string().max(1000),
+  publishDescription: z.string().max(5000),
+  tags: z.array(z.string().max(200)).max(100),
+});
+
+export type ClipTextsInput = z.infer<typeof clipTextsSchema>;
+
+/** Enregistre les textes de publication corrigés à la main (mêmes limites YouTube que le LLM). */
+export async function updateClipTexts(clipId: string, input: ClipTextsInput): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const parsed = clipTextsSchema.safeParse(input);
+  if (!parsed.success) return { error: "Textes invalides." };
+
+  const clip = await prisma.clip.findFirst({ where: { id: clipId, video: { userId: user.id } }, select: { id: true } });
+  if (!clip) return { error: "Clip introuvable." };
+
+  await prisma.clip.update({ where: { id: clip.id }, data: normalizePublishTexts(parsed.data) });
+  refresh();
+  return {};
+}
+
+/** « Régénérer les textes » : appel Gemini léger dans le worker (job generate-texts). */
+export async function regenerateClipTexts(clipId: string): Promise<{ error?: string }> {
+  const user = await requireUser();
+  const clip = await prisma.clip.findFirst({
+    where: { id: clipId, video: { userId: user.id } },
+    select: { id: true, videoId: true, textsStatus: true },
+  });
+  if (!clip) return { error: "Clip introuvable." };
+  if (clip.textsStatus === "PENDING") return { error: "Génération déjà en cours." };
+
+  try {
+    await prisma.clip.update({ where: { id: clip.id }, data: { textsStatus: "PENDING", textsError: null } });
+    await enqueueGenerateTexts({ clipId: clip.id, videoId: clip.videoId, userId: user.id });
+  } catch (error) {
+    console.error("[regenerateClipTexts]", error);
+    return { error: userMessage(error) };
+  }
+  refresh();
+  return {};
+}
+
+const settingsSchema = z.object({
+  channelName: z.string().trim().max(200),
+  channelDescription: z.string().trim().max(2000),
+  tone: z.string().trim().max(500),
+  fixedHashtags: z.string().trim().max(500),
+  appendSourceLink: z.boolean(),
+});
+
+export type SettingsState = { error?: string; saved?: boolean };
+
+/** Page Réglages : contexte de la chaîne, injecté dans les prompts Gemini. */
+export async function saveChannelSettings(_prev: SettingsState, formData: FormData): Promise<SettingsState> {
+  const user = await requireUser();
+  const parsed = settingsSchema.safeParse({
+    channelName: formData.get("channelName") ?? "",
+    channelDescription: formData.get("channelDescription") ?? "",
+    tone: formData.get("tone") ?? "",
+    fixedHashtags: formData.get("fixedHashtags") ?? "",
+    appendSourceLink: formData.get("appendSourceLink") === "on",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Réglages invalides." };
+
+  await prisma.channelSettings.upsert({
+    where: { userId: user.id },
+    create: { userId: user.id, ...parsed.data },
+    update: parsed.data,
+  });
+  refresh();
+  return { saved: true };
 }

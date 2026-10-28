@@ -22,6 +22,15 @@ passages, puis l'app génère des clips 9:16 sous-titrés, prêts à télécharg
 - **Édition de chaque clip** : début/fin (avec la transcription autour et l'écoute du passage),
   correction des sous-titres, titre, recadrage manuel (zone et zoom, aperçu en direct), nouveau rendu.
 - **Régénérer la sélection** : relance seulement l'analyse Gemini (transcription et vidéo en cache).
+- **Textes YouTube** : pour chaque short, Gemini propose dans la même requête que la sélection un
+  titre de publication (100 caractères, accroche dans les 40 premiers), une description avec
+  hashtags et 8 à 15 tags. Bouton « Textes YouTube » sur chaque clip : textes modifiables, copie
+  champ par champ ou « Tout copier », export `.txt`, « Régénérer les textes » (appel Gemini léger
+  sur le seul passage du clip). Les limites YouTube (titre, 500 caractères de tags, doublons) sont
+  appliquées par le code.
+- **Réglages** (`/settings`) : nom et description de la chaîne, public, ton souhaité, hashtags
+  toujours ajoutés, lien « Vidéo complète » en fin de description. Ils sont injectés dans les
+  prompts ; hashtags fixes et lien sont ajoutés par le code à l'affichage, à la copie et au `.txt`.
 - Suivi en direct (statut, progression), retry automatique des erreurs passagères, suppression
   d'une vidéo même en cours de traitement.
 

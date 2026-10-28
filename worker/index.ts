@@ -3,10 +3,11 @@
 import "dotenv/config";
 import { env, geminiConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
-import { getBoss, QUEUES, type ProcessVideoJob, type RenderClipJob } from "@/lib/jobs/boss";
+import { getBoss, QUEUES, type GenerateTextsJob, type ProcessVideoJob, type RenderClipJob } from "@/lib/jobs/boss";
 import { checkBinaries } from "@/lib/media/binaries";
 import { processVideo } from "@/lib/pipeline/process-video";
 import { rerenderClip } from "@/lib/pipeline/rerender-clip";
+import { generateClipTexts } from "@/lib/pipeline/generate-texts";
 
 async function main() {
   env(); // échoue tôt si une variable manque
@@ -24,6 +25,10 @@ async function main() {
   // Un rendu à la fois : deux modifications successives d'un même clip sont rendues dans l'ordre.
   await boss.work<RenderClipJob>(QUEUES.renderClip, { localConcurrency: 1 }, async ([job]) => {
     await rerenderClip(job.data, job.retryCount);
+  });
+  // Textes de publication : appels Gemini légers, indépendants des rendus.
+  await boss.work<GenerateTextsJob>(QUEUES.generateTexts, { localConcurrency: 1 }, async ([job]) => {
+    await generateClipTexts(job.data, job.retryCount);
   });
 
   console.log("Worker prêt, en attente de jobs…");

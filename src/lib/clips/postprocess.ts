@@ -1,4 +1,5 @@
 import type { Segment } from "@/lib/transcript/types";
+import { normalizeDescription, normalizeTags, truncateTitle } from "./publish";
 
 /** Clip candidat proposé par le LLM, temps déjà convertis en secondes. */
 export type CandidateClip = {
@@ -8,9 +9,26 @@ export type CandidateClip = {
   hook: string;
   score: number;
   reason: string;
+  /** Textes de publication (null ou absents si le LLM ne les a pas fournis correctement). */
+  publishTitle?: string | null;
+  publishDescription?: string | null;
+  tags?: string[] | null;
 };
 
-export type SelectedClip = CandidateClip;
+export type SelectedClip = Omit<CandidateClip, "publishTitle" | "publishDescription" | "tags"> & {
+  publishTitle: string | null;
+  publishDescription: string | null;
+  tags: string[];
+};
+
+/** Limites YouTube appliquées aux textes de publication (sans faire confiance au LLM). */
+export function normalizePublishTexts(texts: Pick<CandidateClip, "publishTitle" | "publishDescription" | "tags">) {
+  return {
+    publishTitle: texts.publishTitle ? truncateTitle(texts.publishTitle) || null : null,
+    publishDescription: texts.publishDescription ? normalizeDescription(texts.publishDescription) || null : null,
+    tags: normalizeTags(texts.tags ?? []),
+  };
+}
 
 export type ClipConstraints = {
   clipCount: number;
@@ -109,6 +127,7 @@ export function postProcessClips(
       hook: candidate.hook.trim(),
       reason: candidate.reason.trim(),
       score: Math.round(Math.min(100, Math.max(0, candidate.score))),
+      ...normalizePublishTexts(candidate),
     });
   }
 

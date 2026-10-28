@@ -8,6 +8,8 @@ import { rerenderClip } from "@/app/actions";
 import { CropEditorButton } from "./crop-editor";
 import { ClipEditButton } from "./clip-edit-dialog";
 import { ActionButton } from "./action-button";
+import { PublishTextsButton } from "./publish-texts-dialog";
+import { youtubeWatchUrl, type PublishSettings } from "@/lib/clips/publish";
 
 function scoreTone(score: number) {
   if (score >= 80) return "border-green-600/40 bg-green-600/10 text-green-700 dark:text-green-400";
@@ -25,6 +27,7 @@ export function ClipCard({
   sourceUrl,
   editDisabledReason,
   durations,
+  publishSettings,
 }: {
   clip: Clip;
   rank: number;
@@ -35,6 +38,8 @@ export function ClipCard({
   editDisabledReason?: string;
   /** Durées min/max choisies à la soumission de la vidéo. */
   durations: { min: number; max: number };
+  /** Réglages de la chaîne appliqués à la description (hashtags fixes, lien vers la vidéo). */
+  publishSettings: PublishSettings;
 }) {
   const overridesResult = clip.captionOverrides ? captionOverridesSchema.safeParse(clip.captionOverrides) : null;
   const overrides = overridesResult?.success ? overridesResult.data : null;
@@ -89,8 +94,23 @@ export function ClipCard({
                   SRT
                 </a>
               )}
+              <a
+                href={`/api/clips/${clip.id}/texts`}
+                className="rounded-md border border-border px-3 py-1.5 text-sm hover:bg-surface"
+              >
+                Textes (.txt)
+              </a>
             </>
           )}
+          <PublishTextsButton
+            clipId={clip.id}
+            texts={{ publishTitle: clip.publishTitle, publishDescription: clip.publishDescription, tags: clip.tags }}
+            textsStatus={clip.textsStatus}
+            textsError={clip.textsError}
+            settings={publishSettings}
+            videoUrl={youtubeWatchUrl(youtubeId)}
+            txtUrl={`/api/clips/${clip.id}/texts`}
+          />
           <ClipEditButton
             clipId={clip.id}
             title={clip.title}

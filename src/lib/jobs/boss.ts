@@ -3,6 +3,7 @@ import { PgBoss } from "pg-boss";
 export const QUEUES = {
   processVideo: "process-video",
   renderClip: "render-clip",
+  generateTexts: "generate-texts",
 } as const;
 
 export type ProcessVideoJob = {
@@ -13,6 +14,8 @@ export type ProcessVideoJob = {
 };
 /** Nouveau rendu d'un seul clip (après recadrage, etc.). */
 export type RenderClipJob = { clipId: string; videoId: string };
+/** Nouvelle génération des textes de publication d'un clip. */
+export type GenerateTextsJob = { clipId: string; videoId: string; userId: string };
 
 /** Durée max d'un job (téléchargement d'une longue vidéo + rendu de tous les clips). */
 const JOB_TIMEOUT_SECONDS = 4 * 3600;
@@ -20,6 +23,7 @@ const JOB_TIMEOUT_SECONDS = 4 * 3600;
 const QUEUE_OPTIONS = {
   [QUEUES.processVideo]: { expireInSeconds: JOB_TIMEOUT_SECONDS },
   [QUEUES.renderClip]: { expireInSeconds: JOB_TIMEOUT_SECONDS },
+  [QUEUES.generateTexts]: { expireInSeconds: 30 * 60 },
 };
 
 /**
@@ -99,16 +103,24 @@ export async function enqueueRenderClip(job: RenderClipJob): Promise<void> {
   await boss.send(QUEUES.renderClip, job, { expireInSeconds: JOB_TIMEOUT_SECONDS, ...RENDER_RETRY_POLICY });
 }
 
+/** Met en file la régénération des textes de publication d'un clip (appel Gemini dans le worker). */
+export async function enqueueGenerateTexts(job: GenerateTextsJob): Promise<void> {
+  const boss = await getBoss();
+  await boss.send(QUEUES.generateTexts, job, { expireInSeconds: 30 * 60, ...RENDER_RETRY_POLICY });
+}
+
 /**
  * Annule les jobs d'une vidéo encore en file. Un job déjà démarré n'est pas interrompu
  * par pg-boss : le pipeline détecte lui-même la suppression (voir watchDeletion).
  */
 export async function cancelVideoJobs(videoId: string): Promise<void> {
   const boss = await getBoss();
-  const [processJobs, renderJobs] = await Promise.all([
+  const [processJobs, renderJobs, textsJobs] = await Promise.all([
     boss.findJobs(QUEUES.processVideo, { key: videoId, queued: true }),
     boss.findJobs(QUEUES.renderClip, { data: { videoId }, queued: true }),
+    boss.findJobs(QUEUES.generateTexts, { data: { videoId }, queued: true }),
   ]);
   if (processJobs.length > 0) await boss.cancel(QUEUES.processVideo, processJobs.map((job) => job.id));
   if (renderJobs.length > 0) await boss.cancel(QUEUES.renderClip, renderJobs.map((job) => job.id));
+  if (textsJobs.length > 0) await boss.cancel(QUEUES.generateTexts, textsJobs.map((job) => job.id));
 }

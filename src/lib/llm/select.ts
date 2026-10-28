@@ -4,7 +4,13 @@ import { chunkSegments, formatTranscript } from "@/lib/transcript/format";
 import type { Segment } from "@/lib/transcript/types";
 import { autoMaxClips, type VideoOptions } from "@/lib/options";
 import { generateStructured } from "./gemini-client";
-import { SELECTION_PROMPT_VERSION, systemInstruction, userPrompt, type ClipCountRequest } from "./prompt";
+import {
+  SELECTION_PROMPT_VERSION,
+  systemInstruction,
+  userPrompt,
+  type ChannelContext,
+  type ClipCountRequest,
+} from "./prompt";
 import { llmResponseJsonSchema, llmResponseSchema } from "./schema";
 
 /** Au-delà (≈ 1 h de parole), la transcription est envoyée en plusieurs blocs. */
@@ -22,6 +28,8 @@ export async function selectClips(params: {
   videoId?: string;
   /** Ignorer le cache des réponses Gemini (« Régénérer la sélection »). */
   bypassCache?: boolean;
+  /** Contexte de la chaîne (page Réglages), pour les textes de publication. */
+  channel?: ChannelContext | null;
 }): Promise<{ clips: SelectedClip[]; model: string }> {
   const { title, durationSec, segments, options, signal } = params;
   const withHours = durationSec >= 3600;
@@ -49,6 +57,7 @@ export async function selectClips(params: {
         title,
         durationSec,
         count,
+        channel: params.channel,
         transcript: formatTranscript(chunk, withHours),
         part:
           chunks.length > 1

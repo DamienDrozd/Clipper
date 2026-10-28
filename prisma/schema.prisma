@@ -12,16 +12,17 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model User {
-  id            String    @id @default(cuid())
+  id            String           @id @default(cuid())
   name          String?
-  email         String    @unique
+  email         String           @unique
   emailVerified DateTime?
   image         String?
   accounts      Account[]
   sessions      Session[]
   videos        Video[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  settings      ChannelSettings?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
 }
 
 model Account {
@@ -95,27 +96,34 @@ enum RenderStatus {
   FAILED
 }
 
+/// Génération des textes de publication (titre, description, tags) d'un clip
+enum TextsStatus {
+  IDLE
+  PENDING
+  FAILED
+}
+
 model Video {
-  id           String      @id @default(cuid())
-  youtubeId    String      @unique
-  userId       String
-  title        String
-  durationSec  Int
-  channelId    String
-  channelTitle String
-  thumbnailUrl String?
-  status       VideoStatus @default(PENDING)
+  id            String      @id @default(cuid())
+  youtubeId     String      @unique
+  userId        String
+  title         String
+  durationSec   Int
+  channelId     String
+  channelTitle  String
+  thumbnailUrl  String?
+  status        VideoStatus @default(PENDING)
   /// Progression de l'étape en cours (téléchargement, rendu), 0-100
-  progress     Int         @default(0)
-  error        String?
+  progress      Int         @default(0)
+  error         String?
   /// Options choisies à la soumission : { clipCount, minDuration, maxDuration, language, cropMode }
-  options      Json
+  options       Json
   /// Chemin du MP4 source téléchargé par yt-dlp (relatif à STORAGE_DIR)
-  sourcePath   String?
+  sourcePath    String?
   /// Modèle Gemini qui a réellement produit la sélection (secours éventuel)
   analysisModel String?
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
 
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   transcript Transcript?
@@ -138,30 +146,36 @@ model Transcript {
 }
 
 model Clip {
-  id               String       @id @default(cuid())
-  videoId          String
-  start            Float
-  end              Float
-  title            String
-  hook             String
-  score            Int
-  reason           String
-  cropMode         CropMode     @default(BLUR)
+  id                 String       @id @default(cuid())
+  videoId            String
+  start              Float
+  end                Float
+  title              String
+  hook               String
+  score              Int
+  reason             String
+  cropMode           CropMode     @default(BLUR)
   /// Zone de la source affichée { x, y, w, h } en fractions 0–1 (null = cadrage par défaut)
-  crop             Json?
+  crop               Json?
   /// Corrections manuelles des sous-titres : [{ start, end, text }] par segment de la transcription (null = aucune)
-  captionOverrides Json?
-  renderStatus     RenderStatus @default(PENDING)
+  captionOverrides   Json?
+  renderStatus       RenderStatus @default(PENDING)
   /// Progression du rendu, 0-100
-  renderProgress   Int          @default(0)
-  renderError      String?
+  renderProgress     Int          @default(0)
+  renderError        String?
   /// Chemins relatifs à STORAGE_DIR
-  mp4Path          String?
-  srtPath          String?
-  thumbPath        String?
-  renderedAt       DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  mp4Path            String?
+  srtPath            String?
+  thumbPath          String?
+  renderedAt         DateTime?
+  /// Textes de publication YouTube (null = à générer)
+  publishTitle       String?
+  publishDescription String?
+  tags               String[]     @default([])
+  textsStatus        TextsStatus  @default(IDLE)
+  textsError         String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 
   video Video @relation(fields: [videoId], references: [id], onDelete: Cascade)
 
@@ -200,4 +214,22 @@ model LlmCallLog {
 
   @@index([createdAt])
   @@index([model, createdAt])
+}
+
+/// Contexte de la chaîne, injecté dans les prompts Gemini (une ligne par utilisateur).
+model ChannelSettings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  channelName        String   @default("")
+  /// Description courte de la chaîne et de son public
+  channelDescription String   @default("")
+  /// Ton souhaité pour les textes de publication
+  tone               String   @default("")
+  /// Hashtags toujours ajoutés aux descriptions (ex. « #menuiserie #atelier »)
+  fixedHashtags      String   @default("")
+  /// Ajouter « Vidéo complète : <url> » aux descriptions
+  appendSourceLink   Boolean  @default(true)
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

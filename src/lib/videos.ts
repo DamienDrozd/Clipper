@@ -7,14 +7,14 @@ import type { RenderStatus, VideoStatus } from "@/generated/prisma/enums";
  */
 export function videoVersion(
   video: { status: VideoStatus; updatedAt: Date },
-  clips: { renderStatus: RenderStatus; renderProgress: number }[],
+  clips: { renderStatus: RenderStatus; renderProgress: number; textsStatus?: string }[],
   nextRetryAt: Date | null = null,
 ): string {
   return [
     video.status,
     video.updatedAt.getTime(),
     nextRetryAt?.getTime() ?? "",
-    ...clips.map((c) => `${c.renderStatus}${c.renderProgress}`),
+    ...clips.map((c) => `${c.renderStatus}${c.renderProgress}${c.textsStatus ?? ""}`),
   ].join(":");
 }
 

@@ -16,7 +16,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/videos/[id]
       progress: true,
       error: true,
       updatedAt: true,
-      clips: { select: { renderStatus: true, renderProgress: true }, orderBy: [{ score: "desc" }, { start: "asc" }] },
+      clips: { select: { renderStatus: true, renderProgress: true, textsStatus: true }, orderBy: [{ score: "desc" }, { start: "asc" }] },
     },
   });
   if (!video) return Response.json({ error: "Vidéo introuvable" }, { status: 404 });

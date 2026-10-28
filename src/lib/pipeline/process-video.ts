@@ -13,6 +13,7 @@ import { replaceClips } from "@/lib/clips/store";
 import type { VideoStatus } from "@/generated/prisma/client";
 import { VideoDeletedError, videoExists, watchDeletion } from "./cancellation";
 import { decideFailure } from "./failure";
+import { getChannelSettings } from "@/lib/settings";
 
 /** Change le statut ; lève VideoDeletedError si la vidéo a été supprimée entre-temps. */
 async function setStatus(videoId: string, status: VideoStatus) {
@@ -124,6 +125,7 @@ export async function processVideo(job: ProcessVideoJob, retryCount = 0): Promis
         signal: deletion.signal,
         videoId,
         bypassCache: job.bypassCache,
+        channel: await getChannelSettings(userId),
       });
       await replaceClips(videoId, clips, options.cropMode);
       await prisma.video.updateMany({ where: { id: videoId }, data: { analysisModel: model } });

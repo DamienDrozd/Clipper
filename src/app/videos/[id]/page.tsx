@@ -11,6 +11,7 @@ import { videoOptionsSchema } from "@/lib/options";
 import { getNextRetryAt } from "@/lib/jobs/boss";
 import { primaryGeminiModel } from "@/lib/env";
 import { LocalTime } from "@/components/local-time";
+import { getChannelSettings } from "@/lib/settings";
 import { ActionButton } from "@/components/action-button";
 import { StatusBadge } from "@/components/status-badge";
 import { StatusPoller } from "@/components/status-poller";
@@ -42,6 +43,8 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
   const unrenderedCount = video.clips.filter((clip) => clip.renderStatus !== "DONE").length;
   // Rendus individuels en cours (après un recadrage) : la page continue de se rafraîchir.
   const clipsRendering = video.clips.some((clip) => clip.renderStatus === "QUEUED" || clip.renderStatus === "RENDERING");
+  const textsGenerating = video.clips.some((clip) => clip.textsStatus === "PENDING");
+  const publishSettings = await getChannelSettings(user.id);
   const sourceUrl = video.sourcePath ? fileUrl(video.sourcePath) : null;
   const editDisabledReason = isFinalStatus(video.status) ? undefined : "Disponible à la fin du traitement";
   const options = videoOptionsSchema.safeParse(video.options);
@@ -53,7 +56,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
 
   return (
     <div className="space-y-6">
-      {(!isFinalStatus(video.status) || clipsRendering) && (
+      {(!isFinalStatus(video.status) || clipsRendering || textsGenerating) && (
         <StatusPoller videoId={video.id} version={videoVersion(video, video.clips, nextRetryAt)} />
       )}
 
@@ -160,6 +163,7 @@ async function VideoDetail({ params }: Pick<PageProps<"/videos/[id]">, "params">
                 sourceUrl={sourceUrl}
                 editDisabledReason={editDisabledReason}
                 durations={durations}
+                publishSettings={publishSettings}
               />
             ))}
           </div>
