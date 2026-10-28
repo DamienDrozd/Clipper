@@ -78,10 +78,14 @@ sudo chmod a+rx /usr/local/bin/yt-dlp
 curl -fsSL https://deno.land/install.sh | sh
 ```
 
-Le worker vérifie ces outils au démarrage et s'arrête avec un message explicite s'il en manque un.
-Si plusieurs ffmpeg sont installés (sous Windows, ImageMagick en fournit un ancien), indique le bon
-avec `FFMPEG_PATH` / `FFPROBE_PATH` / `YTDLP_PATH`. Mets yt-dlp à jour régulièrement (`yt-dlp -U`) :
-YouTube change souvent ses protections.
+Le worker vérifie ces outils au démarrage et s'arrête avec un message explicite s'il en manque un
+(Deno manquant donne seulement un avertissement). Si plusieurs ffmpeg sont installés (sous Windows,
+ImageMagick en fournit un ancien), indique le bon avec `FFMPEG_PATH` / `FFPROBE_PATH` / `YTDLP_PATH`.
+
+**yt-dlp sous Linux** : si le worker ne le trouve pas dans le PATH (et que `YTDLP_PATH` n'est pas
+défini), il télécharge lui-même le binaire officiel dans `STORAGE_DIR/bin/yt-dlp`, puis le met à jour
+à chaque démarrage (`yt-dlp -U`) : YouTube change souvent ses protections. Ailleurs, installe-le et
+mets-le à jour toi-même.
 
 ## Configuration Google Cloud
 
@@ -190,8 +194,8 @@ Le web et le worker sont deux processus séparés, construits depuis le même d�
 crée donc **deux ressources** (build pack **Nixpacks**, pas de Dockerfile) qui partagent la même
 base PostgreSQL et le même dossier de stockage.
 
-Le fichier [nixpacks.toml](nixpacks.toml) installe ffmpeg, Deno et la dernière version de yt-dlp
-dans les deux images.
+Le fichier [nixpacks.toml](nixpacks.toml) installe ffmpeg et Deno dans les deux images. yt-dlp est
+téléchargé et tenu à jour par le worker lui-même, dans le dossier de stockage (voir plus haut).
 
 ### 1. Base de données
 
@@ -216,8 +220,6 @@ destination `/data/clipper`. Puis `STORAGE_DIR=/data/clipper` dans les variables
   `start:prod` applique les migrations (`prisma migrate deploy`) puis lance Next. N'utilise pas la
   « Pre-deployment command » de Coolify pour ça : elle s'exécute dans le conteneur précédent et est
   donc ignorée au premier déploiement.
-- Install : laisse `npm install` (ou vide). yt-dlp est installé dans une phase à part de
-  `nixpacks.toml`, que la commande d'installation de Coolify ne remplace pas.
 - Domaine : `https://ton-domaine` (ajoute l'URI de redirection Google correspondante).
 - Variables : toutes celles du tableau ci-dessus.
 
@@ -226,9 +228,11 @@ destination `/data/clipper`. Puis `STORAGE_DIR=/data/clipper` dans les variables
 - Même dépôt, build pack **Nixpacks**.
 - Start : `npm run worker` · pas de domaine ni de port exposé (désactive le health check HTTP).
 - Variables : les mêmes que le web (au minimum `DATABASE_URL`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
-  `AUTH_SECRET`, `ALLOWED_EMAILS`, `GEMINI_API_KEY`, `GEMINI_MODEL`, `STORAGE_DIR`, et
+  `AUTH_SECRET`, `ALLOWED_EMAILS`, `GEMINI_API_KEY`, `GEMINI_MODELS`, `STORAGE_DIR`, et
   `YTDLP_COOKIES` si besoin).
-- Les logs de démarrage affichent la version de chaque outil (`✓ ffmpeg : …`).
+- Le dossier `/data/clipper` doit être monté (et accessible en écriture) : le worker y installe
+  yt-dlp au premier démarrage (`yt-dlp introuvable dans le PATH : téléchargement…`).
+- Les logs de démarrage affichent la version de chaque outil (`✓ ffmpeg : …`, `✓ yt-dlp : …`).
 
 Un seul worker suffit (les rendus sont faits un par un, ffmpeg utilise déjà tous les cœurs).
 L'arrêt est propre (`SIGTERM` : le job en cours se termine ou sera repris).
@@ -237,8 +241,9 @@ L'arrêt est propre (`SIGTERM` : le job en cours se termine ou sera repris).
 
 - Les dépendances de développement (Tailwind, TypeScript) servent au `next build` : si le build
   ne les trouve pas, ajoute la variable de build `NPM_CONFIG_PRODUCTION=false`.
-- Si l'installation des outils via `nixpacks.toml` échoue, regarde les logs de build de Coolify ;
-  le worker indique au démarrage quel outil manque.
+- Si ffmpeg ou Deno manquent, regarde les logs de build de Coolify (installation via
+  `nixpacks.toml`) ; le worker indique au démarrage quel outil manque.
+- Le message `npm warn config production` dans les logs est sans conséquence.
 
 ### yt-dlp : vidéos privées et blocage « confirme que tu n'es pas un robot »
 

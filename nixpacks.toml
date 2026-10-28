@@ -1,20 +1,9 @@
 # Build Nixpacks (Coolify, build pack « Nixpacks ») : mêmes outils pour le web et le worker.
 # - ffmpeg via apt (build Ubuntu, avec libass et libx264) ;
-# - Deno, runtime JavaScript dont yt-dlp a besoin pour YouTube ;
-# - yt-dlp en binaire autonome officiel, dernière version à chaque build (YouTube change souvent).
-#
-# yt-dlp est installé dans une phase à part : la commande d'installation saisie dans Coolify
-# (« npm install ») remplace celle de la phase install, elle n'affecte pas cette phase.
+# - Deno, runtime JavaScript dont yt-dlp a besoin pour YouTube.
+# yt-dlp n'est pas installé ici : le worker le télécharge lui-même au démarrage dans
+# STORAGE_DIR/bin (volume persistant) puis le met à jour à chaque démarrage (voir ensureYtDlp).
 
 [phases.setup]
 nixPkgs = ["...", "deno"]
-aptPkgs = ["...", "ffmpeg", "curl", "ca-certificates"]
-
-[phases.tools]
-dependsOn = ["setup"]
-cmds = [
-  "curl -fsSL -o /usr/local/bin/yt-dlp https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux && chmod a+rx /usr/local/bin/yt-dlp",
-]
-
-[phases.install]
-dependsOn = ["setup", "tools"]
+aptPkgs = ["...", "ffmpeg"]

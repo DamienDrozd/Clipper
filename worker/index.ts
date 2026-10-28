@@ -4,7 +4,7 @@ import "dotenv/config";
 import { env, geminiConfig } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { getBoss, QUEUES, type GenerateTextsJob, type ProcessVideoJob, type RenderClipJob } from "@/lib/jobs/boss";
-import { checkBinaries } from "@/lib/media/binaries";
+import { checkBinaries, ensureYtDlp } from "@/lib/media/binaries";
 import { processVideo } from "@/lib/pipeline/process-video";
 import { rerenderClip } from "@/lib/pipeline/rerender-clip";
 import { generateClipTexts } from "@/lib/pipeline/generate-texts";
@@ -13,6 +13,7 @@ async function main() {
   env(); // échoue tôt si une variable manque
   const gemini = geminiConfig();
   console.log(`✓ Gemini : ${gemini.models.join(" → ")} (retries ${gemini.maxRetries}, timeout ${gemini.timeoutMs / 1000} s)`);
+  await ensureYtDlp();
   const versions = await checkBinaries();
   for (const [name, version] of Object.entries(versions)) console.log(`✓ ${name} : ${version}`);
 
