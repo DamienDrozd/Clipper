@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { baseCropSize, cropFromCenter, cropRectSchema, cropToCenter, roundCrop } from "./crop";
+import {
+  aspectForForegroundHeight,
+  baseCropSize,
+  cropFromCenter,
+  cropRectSchema,
+  cropToCenter,
+  foregroundHeightRatio,
+  frameAspect,
+  roundCrop,
+} from "./crop";
 
 const WIDE = 16 / 9;
 
@@ -57,8 +66,40 @@ describe("cropToCenter", () => {
     expect(back.zoom).toBeCloseTo(2);
   });
 
-  it("null = centré sans zoom", () => {
-    expect(cropToCenter("BLUR", WIDE, null)).toEqual({ cx: 0.5, cy: 0.5, zoom: 1 });
+  it("null = centré sans zoom, format de la source", () => {
+    expect(cropToCenter("BLUR", WIDE, null)).toEqual({ cx: 0.5, cy: 0.5, zoom: 1, blurAspect: null });
+  });
+
+  it("fond flouté : retrouve le format choisi, le zoom et le centre", () => {
+    const crop = cropFromCenter("BLUR", WIDE, { cx: 0.4, cy: 0.5 }, 1.5, 1);
+    const back = cropToCenter("BLUR", WIDE, crop);
+    expect(back.blurAspect).toBeCloseTo(1);
+    expect(back.zoom).toBeCloseTo(1.5);
+    expect(back.cx).toBeCloseTo(0.4);
+  });
+});
+
+describe("format du premier plan (fond flouté)", () => {
+  it("zone carrée : pleine hauteur, côtés rognés", () => {
+    const { w, h } = baseCropSize("BLUR", WIDE, 1);
+    expect(h).toBe(1);
+    expect(w).toBeCloseTo(0.5625);
+    // En pixels (1920x1080) : 1080 x 1080.
+    expect((w * 1920) / (h * 1080)).toBeCloseTo(1);
+  });
+
+  it("borné entre le format de la source et 9:16", () => {
+    expect(frameAspect("BLUR", WIDE, 3)).toBeCloseTo(WIDE);
+    expect(frameAspect("BLUR", WIDE, 0.2)).toBeCloseTo(9 / 16);
+    expect(frameAspect("BLUR", WIDE, null)).toBeCloseTo(WIDE);
+    expect(frameAspect("CENTER", WIDE, 1)).toBeCloseTo(9 / 16);
+  });
+
+  it("part de la hauteur du short occupée par le premier plan", () => {
+    expect(foregroundHeightRatio(WIDE)).toBeCloseTo(0.3164); // 608 px sur 1920 : bandes maximales
+    expect(foregroundHeightRatio(1)).toBeCloseTo(0.5625); // 1080 px
+    expect(foregroundHeightRatio(9 / 16)).toBe(1); // plus de bandes
+    expect(aspectForForegroundHeight(foregroundHeightRatio(4 / 5))).toBeCloseTo(4 / 5);
   });
 });
 

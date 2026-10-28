@@ -20,18 +20,41 @@ export type CropRect = z.infer<typeof cropRectSchema>;
 export type FramingMode = "CENTER" | "BLUR";
 
 export const MAX_ZOOM = 4;
-const OUTPUT_ASPECT = 9 / 16;
+export const OUTPUT_ASPECT = 9 / 16;
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-/** Taille (fractions) de la zone sans zoom, pour une source de rapport largeur/hauteur `sourceAspect`. */
-export function baseCropSize(mode: FramingMode, sourceAspect: number): { w: number; h: number } {
-  if (mode === "BLUR") return { w: 1, h: 1 };
-  // Zone 9:16 la plus grande possible dans la source.
-  return sourceAspect >= OUTPUT_ASPECT
-    ? { w: OUTPUT_ASPECT / sourceAspect, h: 1 }
-    : { w: 1, h: sourceAspect / OUTPUT_ASPECT };
+/**
+ * Format de la zone (largeur/hauteur en pixels). En remplissage : 9:16. En fond flouté : au choix,
+ * entre celui de la source (vidéo entière, bandes floues maximales) et 9:16 (plus de bandes).
+ * Le premier plan étant affiché sur toute la largeur, une zone plus haute donne une image plus
+ * grande et des bandes floues plus fines.
+ */
+export function frameAspect(mode: FramingMode, sourceAspect: number, blurAspect?: number | null): number {
+  if (mode === "CENTER") return OUTPUT_ASPECT;
+  const min = Math.min(OUTPUT_ASPECT, sourceAspect);
+  const max = Math.max(OUTPUT_ASPECT, sourceAspect);
+  return clamp(blurAspect ?? sourceAspect, min, max);
 }
+
+/** Taille (fractions) de la zone sans zoom : la plus grande zone du format voulu dans la source. */
+export function baseCropSize(
+  mode: FramingMode,
+  sourceAspect: number,
+  blurAspect?: number | null,
+): { w: number; h: number } {
+  const aspect = frameAspect(mode, sourceAspect, blurAspect);
+  return sourceAspect >= aspect ? { w: aspect / sourceAspect, h: 1 } : { w: 1, h: sourceAspect / aspect };
+}
+
+/**
+ * Part de la hauteur du short occupée par le premier plan en mode fond flouté (0–1),
+ * pour un format de zone donné : 1080 / aspect pixels sur 1920.
+ */
+export const foregroundHeightRatio = (aspect: number) => Math.min(1, OUTPUT_ASPECT / aspect);
+
+/** Inverse de foregroundHeightRatio : format de zone donnant cette part de hauteur. */
+export const aspectForForegroundHeight = (ratio: number) => OUTPUT_ASPECT / ratio;
 
 /** Zone centrée sur (cx, cy) au niveau de zoom donné, maintenue dans l'image. */
 export function cropFromCenter(
@@ -39,8 +62,9 @@ export function cropFromCenter(
   sourceAspect: number,
   center: { cx: number; cy: number },
   zoom: number,
+  blurAspect?: number | null,
 ): CropRect {
-  const base = baseCropSize(mode, sourceAspect);
+  const base = baseCropSize(mode, sourceAspect, blurAspect);
   const z = clamp(zoom, 1, MAX_ZOOM);
   const w = base.w / z;
   const h = base.h / z;
@@ -52,18 +76,23 @@ export function cropFromCenter(
   };
 }
 
-/** Inverse de cropFromCenter : centre et zoom d'une zone enregistrée (ou par défaut si null). */
+/**
+ * Inverse de cropFromCenter : centre, zoom et (en fond flouté) format d'une zone enregistrée.
+ * Sans zone : centré, sans zoom, format de la source (blurAspect null).
+ */
 export function cropToCenter(
   mode: FramingMode,
   sourceAspect: number,
   crop: CropRect | null,
-): { cx: number; cy: number; zoom: number } {
-  if (!crop) return { cx: 0.5, cy: 0.5, zoom: 1 };
-  const base = baseCropSize(mode, sourceAspect);
+): { cx: number; cy: number; zoom: number; blurAspect: number | null } {
+  if (!crop) return { cx: 0.5, cy: 0.5, zoom: 1, blurAspect: null };
+  const blurAspect = mode === "BLUR" ? frameAspect(mode, sourceAspect, (crop.w / crop.h) * sourceAspect) : null;
+  const base = baseCropSize(mode, sourceAspect, blurAspect);
   return {
     cx: crop.x + crop.w / 2,
     cy: crop.y + crop.h / 2,
     zoom: clamp(base.w / crop.w, 1, MAX_ZOOM),
+    blurAspect,
   };
 }
 

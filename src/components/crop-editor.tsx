@@ -3,12 +3,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { updateClipFraming } from "@/app/actions";
 import {
+  aspectForForegroundHeight,
   cropFromCenter,
   cropToCenter,
+  foregroundHeightRatio,
+  frameAspect,
   MAX_ZOOM,
+  OUTPUT_ASPECT,
   type CropRect,
   type FramingMode,
 } from "@/lib/clips/crop";
+
+/** Formats proposés pour le premier plan en fond flouté (largeur/hauteur). */
+const FOREGROUND_PRESETS: { label: string; aspect: number | null }[] = [
+  { label: "Vidéo entière", aspect: null },
+  { label: "4:3", aspect: 4 / 3 },
+  { label: "1:1", aspect: 1 },
+  { label: "4:5", aspect: 4 / 5 },
+  { label: "3:4", aspect: 3 / 4 },
+];
 import { formatClock } from "@/lib/transcript/format";
 
 type Props = {
@@ -47,7 +60,11 @@ export function CropEditorButton(props: Props) {
 
 const MODES: { value: FramingMode; label: string; hint: string }[] = [
   { value: "CENTER", label: "Remplir l'écran", hint: "La zone choisie occupe tout le short." },
-  { value: "BLUR", label: "Flou en fond", hint: "La zone choisie est centrée sur un fond flouté de l'image." },
+  {
+    value: "BLUR",
+    label: "Flou en fond",
+    hint: "La zone choisie est centrée sur un fond flouté de l'image. Agrandis le premier plan pour réduire les bandes floues.",
+  },
 ];
 
 function CropEditorDialog({
@@ -69,14 +86,16 @@ function CropEditorDialog({
   const [aspect, setAspect] = useState<number | null>(null);
   const [center, setCenter] = useState({ cx: 0.5, cy: 0.5 });
   const [zoom, setZoom] = useState(1);
+  /** Fond flouté : format de la zone (null = celui de la source, vidéo entière). */
+  const [blurAspect, setBlurAspect] = useState<number | null>(null);
   const [time, setTime] = useState(start);
   const [playing, setPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSaving] = useTransition();
 
   const rect = useMemo(
-    () => (aspect ? cropFromCenter(mode, aspect, center, zoom) : null),
-    [aspect, mode, center, zoom],
+    () => (aspect ? cropFromCenter(mode, aspect, center, zoom, blurAspect) : null),
+    [aspect, mode, center, zoom, blurAspect],
   );
 
   // Valeurs lues par la boucle de dessin sans la redémarrer.
@@ -114,6 +133,7 @@ function CropEditorDialog({
     const initial = cropToCenter(cropMode, sourceAspect, crop);
     setCenter({ cx: initial.cx, cy: initial.cy });
     setZoom(initial.zoom);
+    setBlurAspect(initial.blurAspect);
     video.currentTime = start;
   };
 
@@ -135,10 +155,10 @@ function CropEditorDialog({
   const moveTo = useCallback(
     (cx: number, cy: number) => {
       if (!aspect) return;
-      const r = cropFromCenter(mode, aspect, { cx, cy }, zoom);
+      const r = cropFromCenter(mode, aspect, { cx, cy }, zoom, blurAspect);
       setCenter({ cx: r.x + r.w / 2, cy: r.y + r.h / 2 });
     },
-    [aspect, mode, zoom],
+    [aspect, mode, zoom, blurAspect],
   );
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -175,7 +195,15 @@ function CropEditorDialog({
   const reset = () => {
     setCenter({ cx: 0.5, cy: 0.5 });
     setZoom(1);
+    setBlurAspect(null);
   };
+
+  // Fond flouté : taille du premier plan, en % de la hauteur du short (bandes floues = le reste).
+  const canResizeForeground = mode === "BLUR" && aspect !== null && aspect > OUTPUT_ASPECT;
+  const minForeground = aspect ? Math.ceil(foregroundHeightRatio(aspect) * 100) : 100;
+  const foreground = aspect ? Math.round(foregroundHeightRatio(frameAspect("BLUR", aspect, blurAspect)) * 100) : 100;
+  const setForeground = (percent: number) =>
+    setBlurAspect(percent <= minForeground ? null : aspectForForegroundHeight(percent / 100));
 
   const save = () => {
     if (!rect || !aspect) return;
@@ -300,6 +328,46 @@ function CropEditorDialog({
               </div>
               <p className="text-xs text-muted">{MODES.find((m) => m.value === mode)?.hint}</p>
             </fieldset>
+
+            {canResizeForeground && aspect && (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Taille du premier plan</legend>
+                <div className="flex flex-wrap gap-2">
+                  {FOREGROUND_PRESETS.filter((p) => p.aspect === null || p.aspect < aspect).map((preset) => {
+                    const active =
+                      preset.aspect === null ? blurAspect === null : blurAspect !== null && Math.abs(blurAspect - preset.aspect) < 0.01;
+                    return (
+                      <button
+                        key={preset.label}
+                        type="button"
+                        onClick={() => setBlurAspect(preset.aspect)}
+                        className={`rounded-md border px-2.5 py-1 text-xs ${
+                          active ? "border-foreground bg-foreground text-background" : "border-border hover:bg-surface"
+                        }`}
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <label className="flex items-center gap-3 text-sm">
+                  <input
+                    type="range"
+                    min={minForeground}
+                    max={100}
+                    step={1}
+                    value={foreground}
+                    onChange={(e) => setForeground(Number(e.target.value))}
+                    className="flex-1"
+                    aria-label="Hauteur du premier plan"
+                  />
+                  <span className="w-28 text-right text-xs text-muted">{foreground} % de la hauteur</span>
+                </label>
+                <p className="text-xs text-muted">
+                  Plus le premier plan est haut, plus les bandes floues sont fines (les côtés de l&apos;image sont rognés).
+                </p>
+              </fieldset>
+            )}
 
             <label className="flex items-center gap-3 text-sm">
               <span className="font-medium">Zoom</span>
