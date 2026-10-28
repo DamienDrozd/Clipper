@@ -1,4 +1,4 @@
-import type { youtube_v3 } from "googleapis";
+import type { youtube_v3 } from "./api";
 import { AppError } from "@/lib/errors";
 import { toYouTubeError } from "./errors";
 import { parseIsoDuration } from "./url";

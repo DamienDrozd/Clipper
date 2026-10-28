@@ -1,4 +1,5 @@
-import { google, type youtube_v3 } from "googleapis";
+import { OAuth2Client } from "google-auth-library";
+import { youtube, type youtube_v3 } from "./api";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { AppError } from "@/lib/errors";
@@ -19,7 +20,7 @@ export async function getYouTubeClient(userId: string): Promise<youtube_v3.Youtu
   }
 
   const { AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET } = env();
-  const oauth = new google.auth.OAuth2(AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET);
+  const oauth = new OAuth2Client(AUTH_GOOGLE_ID, AUTH_GOOGLE_SECRET);
   oauth.setCredentials({
     access_token: account.access_token,
     refresh_token: account.refresh_token,
@@ -57,5 +58,5 @@ export async function getYouTubeClient(userId: string): Promise<youtube_v3.Youtu
     throw toYouTubeError(error, "rafraîchissement du token");
   }
 
-  return google.youtube({ version: "v3", auth: oauth });
+  return youtube({ version: "v3", auth: oauth });
 }

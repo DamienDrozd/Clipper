@@ -1,4 +1,4 @@
-import type { youtube_v3 } from "googleapis";
+import type { youtube_v3 } from "./api";
 import { AppError } from "@/lib/errors";
 import { parseVtt } from "@/lib/transcript/vtt";
 import type { Segment } from "@/lib/transcript/types";
