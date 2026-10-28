@@ -220,7 +220,13 @@ destination `/data/clipper`. Puis `STORAGE_DIR=/data/clipper` dans les variables
   `start:prod` applique les migrations (`prisma migrate deploy`) puis lance Next. N'utilise pas la
   « Pre-deployment command » de Coolify pour ça : elle s'exécute dans le conteneur précédent et est
   donc ignorée au premier déploiement.
-- Domaine : `https://ton-domaine` (ajoute l'URI de redirection Google correspondante).
+- Domaine : `https://ton-domaine` (ajoute l'URI de redirection Google correspondante, avec le même
+  protocole : `https://ton-domaine/api/auth/callback/google`). Préfère HTTPS : Google exige des
+  URI de redirection en HTTPS pour une application « En production » (hors localhost), et les
+  cookies de session sont alors sécurisés.
+- L'URL publique est déduite des en-têtes du proxy (`X-Forwarded-Host`, `X-Forwarded-Proto`) :
+  derrière Coolify, Next ne voit que `http://localhost:3000`. Pour l'imposer, définis `AUTH_URL`
+  (ex. `https://ton-domaine`).
 - Variables : toutes celles du tableau ci-dessus.
 
 ### 4. Ressource « worker »

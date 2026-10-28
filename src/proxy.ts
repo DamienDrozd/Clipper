@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { withPublicUrl } from "@/lib/public-url";
 
 // Vérification optimiste : présence du cookie de session uniquement.
 // La vraie vérification (session en base + email autorisé) se fait côté serveur via `requireUser()`.
@@ -11,7 +12,8 @@ export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
   }
-  return NextResponse.redirect(new URL("/login", request.url));
+  // URL publique : derrière le reverse proxy, request.url pointe vers localhost.
+  return NextResponse.redirect(new URL("/login", withPublicUrl(request).url));
 }
 
 export const config = {
