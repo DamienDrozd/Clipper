@@ -8,7 +8,6 @@ import {
   SELECTION_PROMPT_VERSION,
   systemInstruction,
   userPrompt,
-  type ChannelContext,
   type ClipCountRequest,
 } from "./prompt";
 import { llmResponseJsonSchema, llmResponseSchema } from "./schema";
@@ -28,8 +27,6 @@ export async function selectClips(params: {
   videoId?: string;
   /** Ignorer le cache des réponses Gemini (« Régénérer la sélection »). */
   bypassCache?: boolean;
-  /** Contexte de la chaîne (page Réglages), pour les textes de publication. */
-  channel?: ChannelContext | null;
 }): Promise<{ clips: SelectedClip[]; model: string }> {
   const { title, durationSec, segments, options, signal } = params;
   const withHours = durationSec >= 3600;
@@ -57,7 +54,6 @@ export async function selectClips(params: {
         title,
         durationSec,
         count,
-        channel: params.channel,
         transcript: formatTranscript(chunk, withHours),
         part:
           chunks.length > 1

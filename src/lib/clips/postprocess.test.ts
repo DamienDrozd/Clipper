@@ -90,25 +90,3 @@ describe("postProcessClips", () => {
     expect(clip.hook).toBe("accroche");
   });
 });
-
-describe("postProcessClips — textes de publication", () => {
-  it("applique les limites YouTube et garde le clip si les textes manquent", () => {
-    const [withTexts, without] = postProcessClips(
-      [
-        {
-          ...candidate(0, 25, 90),
-          publishTitle: "Titre " + "très long ".repeat(15),
-          publishDescription: "  Description.\n\n\n#bois  ",
-          tags: ["#Bois", "bois", "Atelier"],
-        },
-        { ...candidate(100, 130, 80), publishTitle: null },
-      ],
-      segments,
-      { ...limits, clipCount: 5 },
-    );
-    expect(withTexts.publishTitle!.length).toBeLessThanOrEqual(100);
-    expect(withTexts.publishDescription).toBe("Description.\n\n#bois");
-    expect(withTexts.tags).toEqual(["bois", "atelier"]);
-    expect(without).toMatchObject({ publishTitle: null, publishDescription: null, tags: [] });
-  });
-});

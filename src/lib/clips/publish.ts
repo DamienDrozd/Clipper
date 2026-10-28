@@ -121,3 +121,16 @@ export function composePublishText(texts: { title: string; description: string; 
 }
 
 export const youtubeWatchUrl = (youtubeId: string) => `https://www.youtube.com/watch?v=${youtubeId}`;
+
+/** Limites YouTube appliquées aux textes proposés par le LLM (ou saisis à la main). */
+export function normalizePublishTexts(texts: {
+  publishTitle?: string | null;
+  publishDescription?: string | null;
+  tags?: string[] | null;
+}): { publishTitle: string | null; publishDescription: string | null; tags: string[] } {
+  return {
+    publishTitle: texts.publishTitle ? truncateTitle(texts.publishTitle) || null : null,
+    publishDescription: texts.publishDescription ? normalizeDescription(texts.publishDescription) || null : null,
+    tags: normalizeTags(texts.tags ?? []),
+  };
+}

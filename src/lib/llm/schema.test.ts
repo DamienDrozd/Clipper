@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { llmResponseSchema, publishTextsSchema } from "./schema";
+import { llmResponseSchema, publishTextsBatchSchema } from "./schema";
 
 const clip = {
   start: "01:18",
@@ -10,43 +10,33 @@ const clip = {
   reason: "Conseil concret et démonstration visuelle.",
 };
 
-describe("llmResponseSchema", () => {
-  it("accepte un clip complet avec ses textes de publication", () => {
-    const parsed = llmResponseSchema.parse({
-      clips: [{ ...clip, publishTitle: "Serre-joints : l'erreur des débutants", publishDescription: "Texte.\n#bois", tags: ["serre-joint", "collage"] }],
-    });
-    expect(parsed.clips[0]).toMatchObject({
-      start: 78,
-      end: 120,
-      publishTitle: "Serre-joints : l'erreur des débutants",
-      tags: ["serre-joint", "collage"],
-    });
+describe("llmResponseSchema (appel 1 : sélection)", () => {
+  it("accepte un clip et convertit les horodatages", () => {
+    expect(llmResponseSchema.parse({ clips: [clip] }).clips[0]).toMatchObject({ start: 78, end: 120, score: 92 });
   });
 
-  it("textes de publication manquants ou invalides : le clip reste valide (champs à null)", () => {
-    const parsed = llmResponseSchema.parse({
-      clips: [
-        { ...clip },
-        { ...clip, publishTitle: 42, publishDescription: "", tags: "pas une liste" },
-      ],
-    });
-    expect(parsed.clips).toHaveLength(2);
-    for (const c of parsed.clips) {
-      expect(c.publishTitle ?? null).toBeNull();
-      expect(c.publishDescription ?? null).toBeNull();
-      expect(c.tags ?? null).toBeNull();
-    }
+  it("ne contient plus les textes de publication (ignorés s'ils sont renvoyés)", () => {
+    const parsed = llmResponseSchema.parse({ clips: [{ ...clip, publishTitle: "x", tags: ["a"] }] });
+    expect(parsed.clips[0]).not.toHaveProperty("publishTitle");
   });
 
-  it("les champs de sélection restent obligatoires", () => {
+  it("rejette un horodatage ou un score invalide", () => {
     expect(llmResponseSchema.safeParse({ clips: [{ ...clip, start: "1m18" }] }).success).toBe(false);
     expect(llmResponseSchema.safeParse({ clips: [{ ...clip, score: 140 }] }).success).toBe(false);
   });
 });
 
-describe("publishTextsSchema", () => {
-  it("exige les trois champs pour une régénération", () => {
-    expect(publishTextsSchema.safeParse({ publishTitle: "T", publishDescription: "D", tags: ["a"] }).success).toBe(true);
-    expect(publishTextsSchema.safeParse({ publishTitle: "T", publishDescription: "D" }).success).toBe(false);
+describe("publishTextsBatchSchema (appel 2 : textes)", () => {
+  const texts = { id: "S1", publishTitle: "Titre", publishDescription: "Texte.\n#bois", tags: ["bois", "collage"] };
+
+  it("accepte les textes de plusieurs shorts, identifiés par leur id", () => {
+    const parsed = publishTextsBatchSchema.parse({ clips: [texts, { ...texts, id: "S2" }] });
+    expect(parsed.clips.map((c) => c.id)).toEqual(["S1", "S2"]);
+  });
+
+  it("exige l'id et les trois champs", () => {
+    expect(publishTextsBatchSchema.safeParse({ clips: [{ ...texts, id: "" }] }).success).toBe(false);
+    expect(publishTextsBatchSchema.safeParse({ clips: [{ ...texts, tags: [] }] }).success).toBe(false);
+    expect(publishTextsBatchSchema.safeParse({ clips: [{ ...texts, publishDescription: undefined }] }).success).toBe(false);
   });
 });

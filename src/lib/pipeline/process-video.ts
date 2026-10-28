@@ -13,7 +13,7 @@ import { replaceClips } from "@/lib/clips/store";
 import type { VideoStatus } from "@/generated/prisma/client";
 import { VideoDeletedError, videoExists, watchDeletion } from "./cancellation";
 import { decideFailure } from "./failure";
-import { getChannelSettings } from "@/lib/settings";
+import { requestClipTexts } from "./generate-texts";
 
 /** Change le statut ; lève VideoDeletedError si la vidéo a été supprimée entre-temps. */
 async function setStatus(videoId: string, status: VideoStatus) {
@@ -125,11 +125,14 @@ export async function processVideo(job: ProcessVideoJob, retryCount = 0): Promis
         signal: deletion.signal,
         videoId,
         bypassCache: job.bypassCache,
-        channel: await getChannelSettings(userId),
       });
       await replaceClips(videoId, clips, options.cropMode);
       await prisma.video.updateMany({ where: { id: videoId }, data: { analysisModel: model } });
       console.log(`[process-video] ${video.youtubeId} : ${clips.length} clips sélectionnés (${model})`);
+
+      // Appel Gemini n° 2 (textes de publication), en file : il tourne pendant les rendus.
+      const saved = await prisma.clip.findMany({ where: { videoId }, select: { id: true } });
+      await requestClipTexts({ videoId, userId, clipIds: saved.map((c) => c.id), bypassCache: job.bypassCache });
     }
 
     // 3. Vidéo source (yt-dlp, une seule fois) et 4. rendu des clips pas encore rendus.

@@ -3,6 +3,7 @@ import {
   composeDescription,
   composePublishText,
   normalizeDescription,
+  normalizePublishTexts,
   normalizeTags,
   parseHashtags,
   truncateTitle,
@@ -121,5 +122,23 @@ describe("composePublishText", () => {
     expect(composePublishText({ title: "T", description: "D", tags: ["a", "b"] })).toBe(
       "Titre :\nT\n\nDescription :\nD\n\nTags :\na, b",
     );
+  });
+});
+
+describe("normalizePublishTexts", () => {
+  it("applique les limites YouTube ; champs vides ou absents → null / []", () => {
+    const texts = normalizePublishTexts({
+      publishTitle: "Titre " + "très long ".repeat(15),
+      publishDescription: "  Description.\n\n\n#bois  ",
+      tags: ["#Bois", "bois", "Atelier"],
+    });
+    expect(texts.publishTitle!.length).toBeLessThanOrEqual(100);
+    expect(texts.publishDescription).toBe("Description.\n\n#bois");
+    expect(texts.tags).toEqual(["bois", "atelier"]);
+    expect(normalizePublishTexts({ publishTitle: "  ", publishDescription: null })).toEqual({
+      publishTitle: null,
+      publishDescription: null,
+      tags: [],
+    });
   });
 });

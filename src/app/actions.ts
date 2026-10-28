@@ -10,8 +10,9 @@ import { userMessage } from "@/lib/errors";
 import { videoOptionsSchema } from "@/lib/options";
 import { isFinalStatus } from "@/lib/status";
 import { cropRectSchema, roundCrop } from "@/lib/clips/crop";
-import { cancelVideoJobs, enqueueGenerateTexts, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
-import { normalizePublishTexts } from "@/lib/clips/postprocess";
+import { cancelVideoJobs, enqueueProcessVideo, enqueueRenderClip } from "@/lib/jobs/boss";
+import { requestClipTexts } from "@/lib/pipeline/generate-texts";
+import { normalizePublishTexts } from "@/lib/clips/publish";
 import { removeStorageFiles, removeVideoFiles } from "@/lib/storage";
 import { segmentsSchema } from "@/lib/transcript/types";
 import { captionOverridesSchema, mergeCaptionOverrides } from "@/lib/captions/overrides";
@@ -318,8 +319,8 @@ export async function regenerateClipTexts(clipId: string): Promise<{ error?: str
   if (clip.textsStatus === "PENDING") return { error: "Génération déjà en cours." };
 
   try {
-    await prisma.clip.update({ where: { id: clip.id }, data: { textsStatus: "PENDING", textsError: null } });
-    await enqueueGenerateTexts({ clipId: clip.id, videoId: clip.videoId, userId: user.id });
+    // Appel Gemini n° 2 pour ce seul clip, sans réutiliser les textes en cache.
+    await requestClipTexts({ videoId: clip.videoId, userId: user.id, clipIds: [clip.id], bypassCache: true });
   } catch (error) {
     console.error("[regenerateClipTexts]", error);
     return { error: userMessage(error) };

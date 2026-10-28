@@ -14,8 +14,18 @@ export type ProcessVideoJob = {
 };
 /** Nouveau rendu d'un seul clip (après recadrage, etc.). */
 export type RenderClipJob = { clipId: string; videoId: string };
-/** Nouvelle génération des textes de publication d'un clip. */
-export type GenerateTextsJob = { clipId: string; videoId: string; userId: string };
+/**
+ * Textes de publication (appel Gemini n° 2) : tous les clips d'une vidéo juste après la sélection,
+ * ou un seul clip pour « Régénérer les textes » (bypassCache : proposer de nouveaux textes).
+ */
+export type GenerateTextsJob = {
+  videoId: string;
+  userId: string;
+  clipIds: string[];
+  bypassCache?: boolean;
+  /** Ancien format (un seul clip), pour les jobs déjà en file. */
+  clipId?: string;
+};
 
 /** Durée max d'un job (téléchargement d'une longue vidéo + rendu de tous les clips). */
 const JOB_TIMEOUT_SECONDS = 4 * 3600;
@@ -103,7 +113,7 @@ export async function enqueueRenderClip(job: RenderClipJob): Promise<void> {
   await boss.send(QUEUES.renderClip, job, { expireInSeconds: JOB_TIMEOUT_SECONDS, ...RENDER_RETRY_POLICY });
 }
 
-/** Met en file la régénération des textes de publication d'un clip (appel Gemini dans le worker). */
+/** Met en file la génération des textes de publication (appel Gemini dans le worker). */
 export async function enqueueGenerateTexts(job: GenerateTextsJob): Promise<void> {
   const boss = await getBoss();
   await boss.send(QUEUES.generateTexts, job, { expireInSeconds: 30 * 60, ...RENDER_RETRY_POLICY });
